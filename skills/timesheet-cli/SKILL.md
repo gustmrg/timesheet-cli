@@ -1,7 +1,7 @@
 ---
 name: timesheet-cli
 description: Manage Luby Timesheet entries with the local `timesheet` CLI. Use this skill whenever the user asks to log hours, create or edit a timesheet entry, list recent time records, inspect customers/projects/categories, check approval status, delete an entry, authenticate the timesheet CLI, or automate Luby Timesheet work—even when they do not explicitly mention this skill or the CLI.
-compatibility: Requires Node.js 24+ and either the `timesheet` command on PATH or a local checkout of timesheet-cli.
+compatibility: Requires the `timesheet` executable on PATH, or Go 1.26+ with a local checkout of timesheet-cli.
 ---
 
 # Luby Timesheet CLI
@@ -10,19 +10,19 @@ Use the `timesheet` CLI to manage the user's Luby Timesheet records. Prefer the 
 
 ## Locate the CLI
 
-First check whether the linked command is available:
+First check whether the installed command is available:
 
 ```sh
 command -v timesheet
 ```
 
-If it is available, use `timesheet`. When working inside the `timesheet-cli` repository and the linked command is unavailable, use:
+If it is available, use `timesheet`. When working inside the `timesheet-cli` repository and the installed command is unavailable, use:
 
 ```sh
-node ./timesheet.ts
+go run .
 ```
 
-Refer to the selected invocation as `<timesheet>` in the workflow below. Do not install packages or create a global npm link unless the user asks for installation.
+Refer to the selected invocation as `<timesheet>` in the workflow below. Do not install the executable globally unless the user asks for installation.
 
 ## Protect authentication
 
@@ -32,23 +32,22 @@ The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `T
 - Never ask the user to paste a password into the conversation.
 - Do not put passwords in command arguments, environment variables, logs, or scripts on the user's behalf.
 - If authentication is missing or expired, ask the user to run `<timesheet> login` in an interactive terminal. Continue after they confirm that login succeeded.
-- Do not use the developer capture script for normal timesheet work.
 
 ## Choose the command
 
 | User intent | Command |
 | --- | --- |
-| Authenticate | `<timesheet> login` |
+| Authenticate | `<timesheet> login --json` |
 | List recent entries | `<timesheet> list --json` |
 | List all entries | `<timesheet> list --all --json` |
 | Limit returned entries | `<timesheet> list --limit N --json` |
 | Discover customers, projects, and categories | `<timesheet> meta --json` |
 | Check an entry's evaluation | `<timesheet> status ID --json` |
-| Create an entry | `<timesheet> add ...` |
-| Change an entry | `<timesheet> update ID ...` |
-| Delete an entry | `<timesheet> delete ID` |
+| Create an entry | `<timesheet> add ... --json` |
+| Change an entry | `<timesheet> update ID ... --json` |
+| Delete an entry | `<timesheet> delete ID --json` |
 
-Use `--json` for read commands because structured output is safer to interpret than terminal tables. The write commands print a concise human-readable result and do not support JSON output.
+Use `--json` for every command because structured output is safer to interpret than terminal text. Successful responses have the shape `{"ok":true,"data":...}`. Failures are written to stderr as `{"ok":false,"error":{"code":"...","message":"..."}}`; inspect `data` rather than expecting the payload at the top level.
 
 ## Resolve entry values
 
@@ -107,38 +106,39 @@ Before creating an entry, make sure every required value is known. Then run:
   --date YYYY-MM-DD \
   --start HH:mm \
   --end HH:mm \
-  --desc "Implementação de funcionalidade X."
+  --desc "Implementação de funcionalidade X." \
+  --json
 ```
 
 Omit `--date` only when the user clearly intends today. Add `--not-monetize` only when requested.
 
 Creating an entry changes external data. The user's explicit request to create or log the entry is sufficient authorization; otherwise show the proposed values and ask for confirmation before running the command.
 
-After success, report the created entry ID, recorded date/time, and final Brazilian Portuguese description. If the CLI rejects an ambiguous name, use `meta --json` to resolve it instead of repeatedly guessing.
+After success, read the created entry from `data.entry` and report its ID, recorded date/time, and final Brazilian Portuguese description. If the CLI rejects an ambiguous name, use `meta --json` to resolve it instead of repeatedly guessing.
 
 ## Update workflow
 
 Find the entry ID with `list --json` if necessary. Pass only the fields the user wants changed; omitted fields retain their existing values.
 
 ```sh
-<timesheet> update ID --end 18:00 --desc "Atualização da descrição da atividade."
+<timesheet> update ID --end 18:00 --desc "Atualização da descrição da atividade." --json
 ```
 
 An explicit request to edit a specific entry authorizes the update. If the requested change could apply to multiple entries, identify the candidates and ask the user which entry ID to change.
 
 Whenever an update includes `--desc`, apply the Brazilian Portuguese, impersonal, paragraph-based writing policy before sending the value to the CLI.
 
-The current CLI can set `--not-monetize`, but it cannot explicitly switch that value back off. Explain this limitation instead of claiming a monetized update succeeded.
+Use `--not-monetize` to mark an entry non-monetized or `--monetize` to switch it back to monetized. The flags are mutually exclusive; omit both to preserve the current value.
 
 ## Delete workflow
 
 Deletion is destructive. Resolve and show the exact entry ID, date, time, project, and category before deleting. Run:
 
 ```sh
-<timesheet> delete ID
+<timesheet> delete ID --json
 ```
 
-When an interactive prompt is available, let the CLI request confirmation. Use `--yes` only after the user has explicitly confirmed deletion of that exact entry and interaction is otherwise impossible. Never infer deletion approval from a general cleanup request when more than one entry could match.
+When an interactive prompt is available, let the CLI request confirmation. Use `--yes` only after the user has explicitly confirmed deletion of that exact entry and interaction is otherwise impossible. Never infer deletion approval from a general cleanup request when more than one entry could match. Read `data.deleted` to verify whether deletion occurred.
 
 After success, report the deleted entry ID.
 
@@ -153,11 +153,11 @@ After success, report the deleted entry ID.
 
 ## Help
 
-Top-level help is available with:
+Top-level and command-specific help are available with:
 
 ```sh
 <timesheet> --help
+<timesheet> -h
 <timesheet> help
+<timesheet> add --help
 ```
-
-The CLI does not currently support `-h` or command-specific `--help` flags. Use this skill or the repository README for command details.

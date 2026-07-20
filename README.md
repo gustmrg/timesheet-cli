@@ -1,131 +1,68 @@
 # timesheet-cli
 
-A command-line client for managing entries in [Luby Timesheet](https://luby-timesheet.azurewebsites.net). Use it to authenticate, list and inspect entries, view available customers and projects, and create, update, or delete timesheet records.
-
-## Requirements
-
-- Node.js 24 or later
-- npm
-- A valid Luby Timesheet account
-
-Node.js runs the TypeScript source directly, so there is no separate build step.
+A cross-platform command-line client for managing entries in [Luby Timesheet](https://luby-timesheet.azurewebsites.net). It authenticates directly against the site's HTTP endpoints; no browser or language runtime is needed after installation.
 
 ## Installation
 
-Clone the repository, install its dependencies, and link the `timesheet` command:
+Download the archive for your operating system and architecture from [GitHub Releases](https://github.com/gustmrg/timesheet-cli/releases), extract it, and place `timesheet` (or `timesheet.exe`) on your `PATH`.
+
+Developers with Go 1.26 or later can install from source:
 
 ```sh
-git clone https://github.com/gustmrg/timesheet-cli.git
-cd timesheet-cli
-npm install
-npm link
+go install github.com/gustmrg/timesheet-cli@latest
 ```
 
 Verify the installation:
 
 ```sh
+timesheet --version
 timesheet --help
 ```
 
-If you do not want to install the command globally, replace `timesheet` in the examples below with `node ./timesheet.ts`.
+## Authentication
 
-## Getting started
-
-First, authenticate with your Luby Timesheet credentials:
+Authenticate interactively before using the other commands:
 
 ```sh
 timesheet login
 ```
 
-The command prompts for your username and password, then saves the session cookies to `~/.timesheet-cli/session.json`. Run `timesheet login` again whenever the session expires.
+The session is stored at `~/.timesheet-cli/session.json`. Existing sessions created by the earlier TypeScript version remain compatible. Run `login` again when the session expires.
 
-You can also provide credentials with flags or environment variables:
+Credentials may also come from flags or environment variables:
 
 ```sh
 timesheet login --user YOUR_LOGIN --pass YOUR_PASSWORD
-
 TIMESHEET_USER=YOUR_LOGIN TIMESHEET_PASS=YOUR_PASSWORD timesheet login
 ```
 
-The interactive prompt or environment variables are preferable to `--pass`, which may expose the password in your shell history or process list.
-
-After logging in, view your recent entries:
-
-```sh
-timesheet list
-```
+Interactive entry is preferable because `--pass` can expose the password in shell history and process listings, while environment variables can leak through logs or process inspection.
 
 ## Commands
 
-### `login`
-
-Authenticate and save a local session.
-
-```sh
+```text
 timesheet login [--user LOGIN] [--pass PASSWORD]
+timesheet list [--limit N] [--all]
+timesheet meta
+timesheet status ENTRY_ID
+timesheet add --customer CUSTOMER --project PROJECT --category CATEGORY \
+  [--date DATE] --start HH:mm --end HH:mm --desc DESCRIPTION [--not-monetize]
+timesheet update ENTRY_ID [entry flags] [--monetize | --not-monetize]
+timesheet delete ENTRY_ID [--yes]
+timesheet version
 ```
 
-If a flag is omitted, the command uses `TIMESHEET_USER` or `TIMESHEET_PASS` when set, then falls back to an interactive prompt.
+Every command supports `-h`/`--help`. `--json` is a global flag and may appear before or after a subcommand.
 
-### `list`
-
-List timesheet entries, most recent first. By default, the command shows the latest 20 entries.
-
-```sh
-timesheet list [--limit N] [--all] [--json]
-```
-
-- `--limit N` shows at most `N` entries.
-- `--all` shows every entry and takes precedence over `--limit`.
-- `--json` prints machine-readable JSON instead of a table.
+Customer, project, and category values accept a numeric ID or a unique, case-insensitive name substring. Dates accept `YYYY-MM-DD` or `dd/MM/yyyy`; omitted add dates default to today. Times must use 24-hour `HH:mm` format. Descriptions are always treated as plain text and safely encoded for the server.
 
 Examples:
 
 ```sh
 timesheet list --limit 5
-timesheet list --all
-timesheet list --json
-```
+timesheet meta --json
+timesheet status 12345
 
-### `meta`
-
-List the customers, projects, and categories available to your account. This is useful for finding names or numeric IDs before adding an entry.
-
-```sh
-timesheet meta [--json]
-```
-
-### `status`
-
-Show the evaluation status of an entry.
-
-```sh
-timesheet status <entry-id> [--json]
-```
-
-Use `timesheet list` to find an entry ID.
-
-### `add`
-
-Create a timesheet entry.
-
-```sh
-timesheet add \
-  --customer CUSTOMER \
-  --project PROJECT \
-  --category CATEGORY \
-  [--date DATE] \
-  --start HH:mm \
-  --end HH:mm \
-  --desc "DESCRIPTION" \
-  [--not-monetize]
-```
-
-`--date` defaults to today. Customer, project, and category values may be numeric IDs or unique, case-insensitive name substrings.
-
-Example:
-
-```sh
 timesheet add \
   --customer ernst \
   --project internal \
@@ -134,68 +71,38 @@ timesheet add \
   --start 09:00 \
   --end 10:00 \
   --desc "Daily meeting"
-```
 
-If a name matches more than one option, the command reports that it is ambiguous. Use `timesheet meta` to find a more specific name or its numeric ID.
-
-### `update`
-
-Update an existing entry. Only the fields you provide are changed; all other fields keep their current values.
-
-```sh
-timesheet update <entry-id> \
-  [--customer CUSTOMER] \
-  [--project PROJECT] \
-  [--category CATEGORY] \
-  [--date DATE] \
-  [--start HH:mm] \
-  [--end HH:mm] \
-  [--desc "DESCRIPTION"] \
-  [--not-monetize]
-```
-
-Example:
-
-```sh
-timesheet update 12345 --end 18:00 --desc "Updated description"
-```
-
-### `delete`
-
-Delete an entry. The command asks for confirmation unless `--yes` is supplied.
-
-```sh
-timesheet delete <entry-id> [--yes]
-```
-
-Example:
-
-```sh
+timesheet update 12345 --end 18:00 --monetize
 timesheet delete 12345
-timesheet delete 12345 --yes
 ```
 
-## Value formats
+`delete` asks for confirmation unless `--yes` is supplied. On update, `--monetize` and `--not-monetize` explicitly set the value; omitting both preserves the current value.
 
-- Dates accept `YYYY-MM-DD` or `dd/MM/yyyy`. When omitted while adding an entry, the date defaults to today.
-- Times use the 24-hour `HH:mm` format.
-- `--customer`, `--project`, and `--category` accept either a numeric ID or a unique, case-insensitive substring of the name.
-- Descriptions are provided as plain text.
+## JSON output
 
-## Help
+Successful commands return an envelope on stdout:
 
-The CLI supports the following top-level help commands:
-
-```sh
-timesheet --help
-timesheet help
+```json
+{"ok":true,"data":{}}
 ```
 
-The short `-h` flag and command-specific help such as `timesheet add --help` are not currently supported.
+Failures return an envelope on stderr and exit nonzero:
+
+```json
+{"ok":false,"error":{"code":"invalid_input","message":"..."}}
+```
+
+Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, and `internal_error`.
+
+Read-command data shapes:
+
+- `list`: `entries`, `returned`, and `total`
+- `meta`: nested `customers`, `projects`, and `categories`
+- `status`: `entryId`, normalized `state`, `manager`, and `created`
+
+Write commands return the action and normalized entry data; delete returns the entry ID and whether deletion occurred.
 
 ## Configuration
-
-The following environment variables are available:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
@@ -204,14 +111,20 @@ The following environment variables are available:
 | `TIMESHEET_SESSION` | Session file location | `~/.timesheet-cli/session.json` |
 | `TIMESHEET_BASE_URL` | Timesheet server URL | `https://luby-timesheet.azurewebsites.net` |
 
-The session file contains active authentication cookies. The CLI creates it with permissions restricted to the current user. To use a different location, set `TIMESHEET_SESSION` to an absolute file path.
+The session file contains active authentication cookies. Do not print, share, or commit it.
 
 ## Development
 
-Run the type checker with:
+Requirements: Go 1.26 or later.
 
 ```sh
-npm run typecheck
+go test -race ./...
+go vet ./...
+go build ./...
 ```
 
-The project uses strict TypeScript settings and Node.js native type stripping, so the CLI runs directly from `timesheet.ts` without generating JavaScript files.
+The test suite uses local HTTP servers and synthetic HTML fixtures. It never contacts the live timesheet service or reads local sessions and captures.
+
+Version tags matching `v*` trigger GitHub Actions to publish statically linked archives for Linux, macOS, and Windows on `amd64` and `arm64`, together with checksums and Sigstore provenance.
+
+The first Go-based release is `v0.2.0`.

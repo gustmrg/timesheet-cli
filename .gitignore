@@ -5,3 +5,10 @@ capture/
 
 # CLI session cookies
 session.json
+
+# Go build and release artifacts
+/timesheet
+/timesheet.exe
+/timesheet-cli
+/dist/
+/coverage.out
