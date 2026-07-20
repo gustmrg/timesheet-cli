@@ -14,13 +14,13 @@
 // Customer/project/category accept an id or a case-insensitive name substring.
 
 import { parseArgs } from 'node:util';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { fileURLToPath } from 'node:url';
 import { Api, AuthError, type EntryInput, type EntryRef, type EvaluateInfo } from './src/api.ts';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const SESSION_FILE = process.env.TIMESHEET_SESSION ?? path.join(ROOT, 'session.json');
+const SESSION_FILE = process.env.TIMESHEET_SESSION
+  ?? path.join(os.homedir(), '.timesheet-cli', 'session.json');
 
 const [command, ...rest] = process.argv.slice(2);
 

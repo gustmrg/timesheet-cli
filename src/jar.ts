@@ -25,7 +25,8 @@ export class Jar {
 
   save(): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(this.file, JSON.stringify(this.cookies, null, 2));
+    fs.writeFileSync(this.file, JSON.stringify(this.cookies, null, 2), { mode: 0o600 });
+    fs.chmodSync(this.file, 0o600);
   }
 
   header(): string {

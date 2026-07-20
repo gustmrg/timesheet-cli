@@ -119,6 +119,9 @@ export class Api {
     for (let hop = 0; hop < 6; hop++) {
       const res = await fetch(url, { method: currentMethod, headers, body: body ?? null, redirect: 'manual' });
       this.jar.absorb(res);
+      // A response can update the session before redirecting (notably the
+      // login POST). Send the newly received cookies on the next hop.
+      headers.cookie = this.jar.header();
       if ([301, 302, 303, 307, 308].includes(res.status)) {
         const loc = res.headers.get('location');
         if (!loc) return res;
