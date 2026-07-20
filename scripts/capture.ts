@@ -6,7 +6,7 @@
 // - Snapshots cookies/localStorage to capture/storage-state.json every 15s
 // - Shuts down automatically when all browser windows are closed
 //
-// Usage: node scripts/capture.mjs
+// Usage: node scripts/capture.ts
 // IMPORTANT: do NOT log out of the app before closing the browser — logging
 // out may invalidate the session tokens we need for API replay.
 
@@ -19,7 +19,10 @@ const outDir = path.resolve('capture');
 fs.mkdirSync(outDir, { recursive: true });
 
 const logPath = path.join(outDir, `requests-${Date.now()}.jsonl`);
-const logLine = (obj) => fs.appendFileSync(logPath, JSON.stringify(obj) + '\n');
+type LogEntry = Record<string, unknown>;
+const logLine = (obj: LogEntry): void => {
+  fs.appendFileSync(logPath, JSON.stringify(obj) + '\n');
+};
 
 // Response bodies only for these resource types — keeps the log small
 // and focused on API traffic (no JS/CSS/font binaries).
@@ -29,7 +32,7 @@ const context = await chromium.launchPersistentContext(path.join(outDir, 'profil
   headless: false,
   recordHar: {
     path: path.join(outDir, 'session.har'),
-    content: 'embed',
+    content: 'embed', // inline response bodies so we can inspect API payloads
   },
   viewport: { width: 1280, height: 900 },
 });
@@ -48,7 +51,7 @@ context.on('request', (request) => {
 
 context.on('response', (response) => {
   const request = response.request();
-  const entry = {
+  const entry: LogEntry = {
     kind: 'response',
     ts: new Date().toISOString(),
     method: request.method(),
@@ -58,7 +61,7 @@ context.on('response', (response) => {
     headers: response.headers(),
     body: null,
   };
-  if (!BODY_TYPES.has(entry.resourceType)) {
+  if (!BODY_TYPES.has(request.resourceType())) {
     logLine(entry);
     return;
   }
@@ -71,7 +74,7 @@ context.on('response', (response) => {
     .finally(() => logLine(entry));
 });
 
-async function snapshotState() {
+async function snapshotState(): Promise<void> {
   try {
     await context.storageState({ path: path.join(outDir, 'storage-state.json') });
   } catch {
@@ -82,7 +85,7 @@ async function snapshotState() {
 const snapshotTimer = setInterval(snapshotState, 15_000);
 
 let closing = false;
-async function shutdown(reason) {
+async function shutdown(reason: string): Promise<void> {
   if (closing) return;
   closing = true;
   console.log(`Shutting down (${reason}).`);
@@ -95,16 +98,16 @@ async function shutdown(reason) {
   process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
 // Quit when every window is closed (covers macOS window-close where the
 // browser process itself stays alive).
-const pageWatch = setInterval(() => {
+setInterval(() => {
   try {
-    if (context.pages().length === 0) shutdown('all windows closed');
+    if (context.pages().length === 0) void shutdown('all windows closed');
   } catch {
-    shutdown('context gone');
+    void shutdown('context gone');
   }
 }, 1_000);
 

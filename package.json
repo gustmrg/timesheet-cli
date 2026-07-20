@@ -3,16 +3,19 @@
   "version": "0.1.0",
   "description": "CLI for luby-timesheet (derived from recorded browser session)",
   "scripts": {
-    "capture": "node scripts/capture.mjs"
+    "typecheck": "tsc --noEmit",
+    "capture": "node scripts/capture.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "devDependencies": {
-    "playwright": "^1.61.1"
+    "@types/node": "^26.1.1",
+    "playwright": "^1.61.1",
+    "typescript": "^7.0.2"
   },
   "bin": {
-    "timesheet": "./timesheet.js"
+    "timesheet": "./timesheet.ts"
   }
 }

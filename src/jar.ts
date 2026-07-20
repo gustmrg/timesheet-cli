@@ -2,42 +2,47 @@
 // Persists as JSON: { "cookie-name": "value", ... }
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 export class Jar {
-  constructor(file) {
+  file: string;
+  cookies: Record<string, string>;
+
+  constructor(file: string) {
     this.file = file;
     this.cookies = {};
   }
 
-  static load(file) {
+  static load(file: string): Jar {
     const jar = new Jar(file);
     try {
-      jar.cookies = JSON.parse(fs.readFileSync(file, 'utf8'));
+      jar.cookies = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, string>;
     } catch {
       // no session yet — start empty
     }
     return jar;
   }
 
-  save() {
-    fs.mkdirSync(new URL('.', 'file://' + this.file + '/').pathname, { recursive: true });
+  save(): void {
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(this.cookies, null, 2));
   }
 
-  header() {
+  header(): string {
     return Object.entries(this.cookies)
       .map(([k, v]) => `${k}=${v}`)
       .join('; ');
   }
 
-  get(name) {
+  get(name: string): string | undefined {
     return this.cookies[name];
   }
 
   // Absorb Set-Cookie headers from a fetch Response.
-  absorb(res) {
-    for (const sc of res.headers.getSetCookie?.() ?? []) {
+  absorb(res: Response): void {
+    for (const sc of res.headers.getSetCookie()) {
       const [pair] = sc.split(';');
+      if (!pair) continue;
       const eq = pair.indexOf('=');
       if (eq < 0) continue;
       const name = pair.slice(0, eq).trim();

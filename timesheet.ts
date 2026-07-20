@@ -15,10 +15,9 @@
 
 import { parseArgs } from 'node:util';
 import path from 'node:path';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
-import { Api, AuthError } from './src/api.js';
+import { fileURLToPath } from 'node:url';
+import { Api, AuthError, type EntryInput, type EntryRef, type EvaluateInfo } from './src/api.ts';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_FILE = process.env.TIMESHEET_SESSION ?? path.join(ROOT, 'session.json');
@@ -27,7 +26,34 @@ const [command, ...rest] = process.argv.slice(2);
 
 const api = new Api(SESSION_FILE);
 
-async function main() {
+interface EntryFlags {
+  customer?: string | undefined;
+  project?: string | undefined;
+  category?: string | undefined;
+  date?: string | undefined;
+  start?: string | undefined;
+  end?: string | undefined;
+  desc?: string | undefined;
+  'not-monetize'?: boolean | undefined;
+}
+
+interface MaybeRef {
+  id: string | number;
+  name: string | null;
+}
+
+interface EntryBase {
+  customer?: MaybeRef;
+  project?: MaybeRef;
+  category?: MaybeRef;
+  date?: string;
+  start?: string;
+  end?: string;
+  description?: string;
+  notMonetize?: boolean;
+}
+
+async function main(): Promise<void> {
   switch (command) {
     case 'login': return cmdLogin(rest);
     case 'list': return cmdList(rest);
@@ -66,7 +92,7 @@ const USAGE = `usage: timesheet <command>
 
 // --- commands -------------------------------------------------------------
 
-async function cmdLogin(argv) {
+async function cmdLogin(argv: string[]): Promise<void> {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -80,7 +106,7 @@ async function cmdLogin(argv) {
   console.log('logged in — session saved to', SESSION_FILE);
 }
 
-async function cmdList(argv) {
+async function cmdList(argv: string[]): Promise<void> {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -108,13 +134,19 @@ async function cmdList(argv) {
   if (total > entries.length) console.log(`… ${total - entries.length} more (use --all)`);
 }
 
-async function cmdMeta(argv) {
+interface MetaCustomer {
+  id: string;
+  name: string;
+  projects: Array<{ id: number; name: string; categories: Array<{ id: number; name: string }> }>;
+}
+
+async function cmdMeta(argv: string[]): Promise<void> {
   const { values } = parseArgs({ args: argv, options: { json: { type: 'boolean' } } });
   const meta = await api.getMeta();
-  const out = [];
+  const out: MetaCustomer[] = [];
   for (const c of meta.customer ?? []) {
     const projects = await api.dropDownChange({ idcustomer: c.value });
-    const projList = [];
+    const projList: MetaCustomer['projects'] = [];
     for (const p of projects) {
       const categories = await api.dropDownChange({ idproject: p.IdProject });
       projList.push({
@@ -135,7 +167,7 @@ async function cmdMeta(argv) {
   }
 }
 
-async function cmdStatus(argv) {
+async function cmdStatus(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -148,7 +180,7 @@ async function cmdStatus(argv) {
   if (!entry) die(`entry ${id} not found`);
   if (!entry.evaluateId) die(`entry ${id} has no evaluation`);
 
-  const ev = await api.readEvaluate(entry.id, entry.evaluateId);
+  const ev: EvaluateInfo = await api.readEvaluate(entry.id, entry.evaluateId);
   const state =
     ev.IsApprove === '1' ? 'Aprovado'
     : ev.IsReprove === '1' ? 'Reprovado'
@@ -163,7 +195,7 @@ async function cmdStatus(argv) {
   console.log(`created: ${ev.Created ?? '—'}`);
 }
 
-async function cmdAdd(argv) {
+async function cmdAdd(argv: string[]): Promise<void> {
   const { values } = parseArgs({ args: argv, options: addOptions() });
   const entry = await resolveEntry(values, {});
   const res = await api.createEntry(entry);
@@ -172,7 +204,7 @@ async function cmdAdd(argv) {
   console.log(`created entry ${created?.Id ?? '?'} (${entry.date} ${entry.start}–${entry.end}, ${entry.project.name})`);
 }
 
-async function cmdUpdate(argv) {
+async function cmdUpdate(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -183,7 +215,7 @@ async function cmdUpdate(argv) {
 
   const cur = await api.getWorksheet(id);
   if (!cur?.Id) die(`entry ${id} not found`);
-  const base = {
+  const base: EntryBase = {
     customer: { id: cur.IdCustomer, name: null },
     project: { id: cur.IdProject, name: null },
     category: { id: cur.IdCategory, name: null },
@@ -199,7 +231,7 @@ async function cmdUpdate(argv) {
   console.log(`updated entry ${id} (${entry.date} ${entry.start}–${entry.end}, ${entry.project.name})`);
 }
 
-async function cmdDelete(argv) {
+async function cmdDelete(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -231,57 +263,64 @@ function addOptions() {
     end: { type: 'string' },
     desc: { type: 'string' },
     'not-monetize': { type: 'boolean' },
-  };
+  } as const;
 }
 
 // Merge CLI flags over a base entry, resolving ids/names via site metadata.
-async function resolveEntry(values, base) {
+async function resolveEntry(values: EntryFlags, base: EntryBase): Promise<EntryInput> {
   const meta = await api.getMeta();
-  const customers = (meta.customer ?? []).map((c) => ({ id: c.value, name: c.label }));
+  const customers: EntryRef[] = (meta.customer ?? []).map((c) => ({ id: c.value, name: c.label }));
   const customer = await pick('customer', values.customer ?? base.customer?.id, customers, base.customer);
 
-  const projects = (await api.dropDownChange({ idcustomer: customer.id })).map((p) => ({
+  const projects: EntryRef[] = (await api.dropDownChange({ idcustomer: customer.id })).map((p) => ({
     id: p.IdProject,
     name: p.ProjectName,
   }));
   const project = await pick('project', values.project ?? base.project?.id, projects, base.project);
 
-  const categories = (await api.dropDownChange({ idproject: project.id })).map((k) => ({
+  const categories: EntryRef[] = (await api.dropDownChange({ idproject: project.id })).map((k) => ({
     id: k.IdCategory,
     name: k.CategoryName,
   }));
   const category = await pick('category', values.category ?? base.category?.id, categories, base.category);
 
-  const entry = {
+  const entry: EntryInput = {
     customer,
     project,
     category,
     date: toWireDate(values.date ?? base.date ?? isoToday()),
-    start: values.start ?? base.start,
-    end: values.end ?? base.end,
-    description: values.desc ?? base.description,
+    start: values.start ?? base.start ?? '',
+    end: values.end ?? base.end ?? '',
+    description: values.desc ?? base.description ?? '',
     notMonetize: values['not-monetize'] ?? base.notMonetize ?? false,
   };
-  for (const f of ['date', 'start', 'end', 'description']) {
-    if (!entry[f]) die(`missing --${f === 'description' ? 'desc' : f}`);
-  }
+  if (!entry.start) die('missing --start');
+  if (!entry.end) die('missing --end');
+  if (!entry.description) die('missing --desc');
   return entry;
 }
 
 // Match a flag value against options: numeric id or case-insensitive substring.
-async function pick(kind, wanted, options, fallback) {
+async function pick(
+  kind: string,
+  wanted: string | number | undefined,
+  options: EntryRef[],
+  fallback?: MaybeRef,
+): Promise<EntryRef> {
   if (wanted == null) die(`missing --${kind}`);
   const w = String(wanted).toLowerCase();
   const byId = options.find((o) => String(o.id) === String(wanted));
   if (byId) return byId;
   const matches = options.filter((o) => o.name.toLowerCase().includes(w));
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) die(`--${kind} "${wanted}" is ambiguous: ${matches.map((m) => m.name).join(', ')}`);
-  if (fallback?.id != null && String(fallback.id) === String(wanted)) return fallback;
+  if (fallback && String(fallback.id) === String(wanted) && fallback.name != null) {
+    return { id: fallback.id, name: fallback.name };
+  }
   die(`unknown ${kind}: "${wanted}" (see \`timesheet meta\`)`);
 }
 
-function toWireDate(d) {
+function toWireDate(d: string): string {
   let m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/); // ISO
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); // already wire format
@@ -289,36 +328,41 @@ function toWireDate(d) {
   die(`invalid date "${d}" — use YYYY-MM-DD or dd/MM/yyyy`);
 }
 
-const isoToday = () => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
+const isoToday = (): string => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
 
-function printTable(header, rows) {
+function printTable(header: string[], rows: string[][]): void {
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
-  const line = (cols) => cols.map((c, i) => String(c).padEnd(widths[i])).join('  ').trimEnd();
+  const line = (cols: string[]): string =>
+    cols.map((c, i) => String(c).padEnd(widths[i] ?? 0)).join('  ').trimEnd();
   console.log(line(header));
   console.log(widths.map((w) => '─'.repeat(w)).join('  '));
   for (const r of rows) console.log(line(r));
 }
 
-const printJson = (obj) => console.log(JSON.stringify(obj, null, 2));
+const printJson = (obj: unknown): void => console.log(JSON.stringify(obj, null, 2));
 
-function die(msg) {
+function die(msg: string): never {
   console.error(`error: ${msg}`);
   process.exit(1);
 }
 
-function ask(question) {
+function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => rl.question(question, (a) => { rl.close(); resolve(a); }));
 }
 
-function askHidden(question) {
+function askHidden(question: string): Promise<string> {
   if (!process.stdin.isTTY) die('no TTY — pass --pass or TIMESHEET_PASS');
   return new Promise((resolve) => {
     process.stdout.write(question);
     const stdin = process.stdin;
     let buf = '';
-    const cleanup = () => { stdin.setRawMode(false); stdin.pause(); stdin.off('data', onData); };
-    const onData = (ch) => {
+    const cleanup = (): void => {
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.off('data', onData);
+    };
+    const onData = (ch: string): void => {
       if (ch === '\n' || ch === '\r') { cleanup(); process.stdout.write('\n'); resolve(buf); }
       else if (ch === '') { cleanup(); process.exit(130); }
       else if (ch === '') buf = buf.slice(0, -1);
@@ -331,7 +375,7 @@ function askHidden(question) {
   });
 }
 
-main().catch((err) => {
-  console.error(`error: ${err.message}`);
+main().catch((err: unknown) => {
+  console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });
