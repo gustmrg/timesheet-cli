@@ -1,0 +1,7 @@
+node_modules/
+
+# Auth/session capture artifacts — contain live tokens and cookies
+capture/
+
+# CLI session cookies
+session.json
