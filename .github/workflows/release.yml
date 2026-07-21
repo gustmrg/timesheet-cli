@@ -31,6 +31,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Attest release artifacts
+        # GitHub does not support artifact attestations for private user repositories.
+        if: github.event.repository.private == false
         uses: actions/attest@v4
         with:
           subject-checksums: ./dist/checksums.txt
