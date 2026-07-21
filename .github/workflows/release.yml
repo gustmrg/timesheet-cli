@@ -22,7 +22,7 @@ jobs:
           go-version: '1.26.x'
           cache: true
       - run: go test ./...
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.0
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
