@@ -4,7 +4,20 @@ A cross-platform command-line client for managing entries in [Luby Timesheet](ht
 
 ## Installation
 
-Download the archive for your operating system and architecture from [GitHub Releases](https://github.com/gustmrg/timesheet-cli/releases), extract it, and place `timesheet` (or `timesheet.exe`) on your `PATH`.
+On macOS or Linux, install the latest release with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | sh
+```
+
+The script detects your operating system and architecture, verifies the release checksum, and installs `timesheet` to `/usr/local/bin`. Set `INSTALL_DIR` to choose another location, or `VERSION` to install a specific release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.3.0 sh
+```
+
+Windows users can download the appropriate archive from [GitHub Releases](https://github.com/gustmrg/timesheet-cli/releases), extract it, and place `timesheet.exe` on their `PATH`.
 
 Developers with Go 1.26 or later can install from source:
 
