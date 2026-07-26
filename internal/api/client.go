@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -45,15 +46,27 @@ func IsKind(err error, kind Kind) bool {
 }
 
 type Config struct {
-	BaseURL     string
-	SessionFile string
+	BaseURL      string
+	SessionFile  string
+	RenewSession RenewSessionFunc
+}
+
+type RenewSessionFunc func(client *Client) error
+
+type Warning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type Client struct {
-	baseURL     *url.URL
-	sessionFile string
-	jar         http.CookieJar
-	http        *http.Client
+	baseURL          *url.URL
+	sessionFile      string
+	jar              http.CookieJar
+	http             *http.Client
+	renewSession     RenewSessionFunc
+	renewAttempted   bool
+	persistedCookies map[string]string
+	warnings         []Warning
 }
 
 type Ref struct {
@@ -131,7 +144,13 @@ func New(config Config) (*Client, error) {
 	if err != nil {
 		return nil, &Error{Kind: KindInvalidResponse, Message: "create cookie jar", Cause: err}
 	}
-	client := &Client{baseURL: baseURL, sessionFile: config.SessionFile, jar: jar}
+	client := &Client{
+		baseURL:          baseURL,
+		sessionFile:      config.SessionFile,
+		jar:              jar,
+		renewSession:     config.RenewSession,
+		persistedCookies: make(map[string]string),
+	}
 	client.http = &http.Client{Jar: jar}
 	if err := client.loadSession(); err != nil {
 		return nil, err
@@ -160,6 +179,10 @@ func (c *Client) Login(user, password string) error {
 }
 
 func (c *Client) ListEntries() ([]webparse.Entry, error) {
+	return withReadRetry(c, c.listEntries)
+}
+
+func (c *Client) listEntries() ([]webparse.Entry, error) {
 	body, err := c.readPage()
 	if err != nil {
 		return nil, err
@@ -172,6 +195,10 @@ func (c *Client) ListEntries() ([]webparse.Entry, error) {
 }
 
 func (c *Client) Metadata() (map[string][]webparse.Option, error) {
+	return withReadRetry(c, c.metadata)
+}
+
+func (c *Client) metadata() (map[string][]webparse.Option, error) {
 	body, err := c.readPage()
 	if err != nil {
 		return nil, err
@@ -184,6 +211,12 @@ func (c *Client) Metadata() (map[string][]webparse.Option, error) {
 }
 
 func (c *Client) DropDownChange(query DropDownQuery) ([]DropDownRecord, error) {
+	return withReadRetry(c, func() ([]DropDownRecord, error) {
+		return c.dropDownChange(query)
+	})
+}
+
+func (c *Client) dropDownChange(query DropDownQuery) ([]DropDownRecord, error) {
 	values := url.Values{}
 	if query.CustomerID != 0 {
 		values.Set("idcustomer", strconv.FormatInt(query.CustomerID, 10))
@@ -199,6 +232,12 @@ func (c *Client) DropDownChange(query DropDownQuery) ([]DropDownRecord, error) {
 }
 
 func (c *Client) Worksheet(id int64) (WorksheetRecord, error) {
+	return withReadRetry(c, func() (WorksheetRecord, error) {
+		return c.worksheet(id)
+	})
+}
+
+func (c *Client) worksheet(id int64) (WorksheetRecord, error) {
 	var result WorksheetRecord
 	query := url.Values{"id": {strconv.FormatInt(id, 10)}}
 	err := c.readJSON(http.MethodGet, "/Worksheet/Update", query, nil, "", true, &result)
@@ -206,6 +245,12 @@ func (c *Client) Worksheet(id int64) (WorksheetRecord, error) {
 }
 
 func (c *Client) Evaluate(worksheetID, evaluateID int64) (EvaluateInfo, error) {
+	return withReadRetry(c, func() (EvaluateInfo, error) {
+		return c.evaluate(worksheetID, evaluateID)
+	})
+}
+
+func (c *Client) evaluate(worksheetID, evaluateID int64) (EvaluateInfo, error) {
 	var result EvaluateInfo
 	form := url.Values{"idworksheet": {strconv.FormatInt(worksheetID, 10)}, "idevaluate": {strconv.FormatInt(evaluateID, 10)}}
 	err := c.readJSON(http.MethodPost, "/Worksheet/ReadEvaluate", nil, strings.NewReader(form.Encode()), "application/x-www-form-urlencoded; charset=UTF-8", true, &result)
@@ -290,6 +335,7 @@ func (c *Client) readPage() ([]byte, error) {
 	if webparse.IsLoginPage(body) {
 		return nil, &Error{Kind: KindAuth, Message: "session expired or missing; run `timesheet login` first"}
 	}
+	c.persistSessionBestEffort()
 	return body, nil
 }
 
@@ -308,6 +354,7 @@ func (c *Client) readJSON(method, path string, query url.Values, body io.Reader,
 		}
 		return &Error{Kind: KindInvalidResponse, Message: fmt.Sprintf("expected JSON from %s, got: %s", path, preview), Cause: err}
 	}
+	c.persistSessionBestEffort()
 	return nil
 }
 
@@ -359,19 +406,25 @@ func (c *Client) loadSession() error {
 		cookies = append(cookies, &http.Cookie{Name: name, Value: value, Path: "/"})
 	}
 	c.jar.SetCookies(c.baseURL, cookies)
+	c.persistedCookies = cloneCookies(stored)
 	return nil
 }
 
 func (c *Client) saveSession() error {
+	stored := c.cookieSnapshot()
+	if err := c.writeSession(stored); err != nil {
+		return err
+	}
+	c.persistedCookies = cloneCookies(stored)
+	return nil
+}
+
+func (c *Client) writeSession(stored map[string]string) error {
 	directory := filepath.Dir(c.sessionFile)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return &Error{Kind: KindInvalidResponse, Message: "create session directory", Cause: err}
 	}
 	_ = os.Chmod(directory, 0o700)
-	stored := make(map[string]string)
-	for _, cookie := range c.jar.Cookies(c.baseURL) {
-		stored[cookie.Name] = cookie.Value
-	}
 	temporary, err := os.CreateTemp(directory, ".session-*.tmp")
 	if err != nil {
 		return &Error{Kind: KindInvalidResponse, Message: "create temporary session file", Cause: err}
@@ -399,6 +452,73 @@ func (c *Client) saveSession() error {
 		return &Error{Kind: KindInvalidResponse, Message: "save session file", Cause: err}
 	}
 	return nil
+}
+
+func (c *Client) persistSessionBestEffort() {
+	stored := c.cookieSnapshot()
+	if maps.Equal(stored, c.persistedCookies) {
+		return
+	}
+	if err := c.writeSession(stored); err != nil {
+		c.addWarning(Warning{
+			Code:    "session_persist_failed",
+			Message: "authenticated, but could not persist the renewed session",
+		})
+		return
+	}
+	c.persistedCookies = cloneCookies(stored)
+}
+
+func (c *Client) cookieSnapshot() map[string]string {
+	stored := make(map[string]string)
+	for _, cookie := range c.jar.Cookies(c.baseURL) {
+		stored[cookie.Name] = cookie.Value
+	}
+	return stored
+}
+
+func cloneCookies(source map[string]string) map[string]string {
+	cloned := make(map[string]string, len(source))
+	for name, value := range source {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func (c *Client) addWarning(warning Warning) {
+	for _, existing := range c.warnings {
+		if existing.Code == warning.Code {
+			return
+		}
+	}
+	c.warnings = append(c.warnings, warning)
+}
+
+func (c *Client) Warnings() []Warning {
+	return append([]Warning(nil), c.warnings...)
+}
+
+func (c *Client) Renew() error {
+	if c.renewSession == nil {
+		return &Error{Kind: KindAuth, Message: "session expired or missing; run `timesheet login` first"}
+	}
+	if c.renewAttempted {
+		return &Error{Kind: KindAuth, Message: "session renewal was already attempted; run `timesheet login`"}
+	}
+	c.renewAttempted = true
+	return c.renewSession(c)
+}
+
+func withReadRetry[T any](c *Client, operation func() (T, error)) (T, error) {
+	result, err := operation()
+	if err == nil || !IsKind(err, KindAuth) || c.renewSession == nil || c.renewAttempted {
+		return result, err
+	}
+	if renewErr := c.Renew(); renewErr != nil {
+		var zero T
+		return zero, renewErr
+	}
+	return operation()
 }
 
 var paragraphBreak = regexp.MustCompile(`\n{2,}`)

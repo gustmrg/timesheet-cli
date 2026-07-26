@@ -31,13 +31,18 @@ The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `T
 - Never read, print, copy, summarize, commit, or expose the session file. It contains active authentication cookies.
 - Never ask the user to paste a password into the conversation.
 - Do not put passwords in command arguments, environment variables, logs, or scripts on the user's behalf.
-- If authentication is missing or expired, ask the user to run `<timesheet> login` in an interactive terminal. Continue after they confirm that login succeeded.
+- The CLI automatically persists sliding cookie renewal. Credentials are stored separately in macOS Keychain, Windows Credential Manager, or Linux Secret Service only when the user runs `<timesheet> login --save-credentials`.
+- Read commands can automatically reauthenticate and retry once when saved credentials are available. Write commands are never automatically retried.
+- If authentication is missing and automatic renewal is unavailable, ask the user to run `<timesheet> login` in an interactive terminal. Mention `--save-credentials` only when they want future automatic reauthentication.
 
 ## Choose the command
 
 | User intent | Command |
 | --- | --- |
 | Authenticate | `<timesheet> login --json` |
+| Authenticate and opt into automatic renewal | `<timesheet> login --save-credentials --json` |
+| Remove the cookie session | `<timesheet> logout --json` |
+| Remove the session and saved credentials | `<timesheet> logout --forget-credentials --json` |
 | List recent entries | `<timesheet> list --json` |
 | List all entries | `<timesheet> list --all --json` |
 | Limit returned entries | `<timesheet> list --limit N --json` |
@@ -47,7 +52,7 @@ The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `T
 | Change an entry | `<timesheet> update ID ... --json` |
 | Delete an entry | `<timesheet> delete ID --json` |
 
-Use `--json` for every command because structured output is safer to interpret than terminal text. Successful responses have the shape `{"ok":true,"data":...}`. Failures are written to stderr as `{"ok":false,"error":{"code":"...","message":"..."}}`; inspect `data` rather than expecting the payload at the top level.
+Use `--json` for every command because structured output is safer to interpret than terminal text. Successful responses have the shape `{"ok":true,"data":...}` and may include a top-level `warnings` array. Failures are written to stderr as `{"ok":false,"error":{"code":"...","message":"..."}}`; inspect `data` rather than expecting the payload at the top level.
 
 ## Resolve entry values
 
@@ -144,7 +149,9 @@ After success, report the deleted entry ID.
 
 ## Handle failures
 
-- For `Session expired or missing`, pause and ask the user to run `<timesheet> login` interactively.
+- For `auth_required`, automatic renewal was unavailable or a write was deliberately not retried. Follow the exact message: ask for interactive login when needed, or rerun a write only after telling the user that the session was renewed and confirming the original operation did not succeed.
+- For `login_failed` after automatic renewal, ask the user to run `<timesheet> login --save-credentials` interactively; rejected saved credentials are removed to avoid repeated attempts.
+- Treat `credential_store_unavailable` and `session_persist_failed` warnings as nonfatal. Explain that the completed operation succeeded, but future automatic authentication may require login.
 - For an unknown or ambiguous customer, project, or category, run `<timesheet> meta --json` and resolve it with the user.
 - For a missing entry, refresh with `<timesheet> list --all --json` before concluding that it does not exist.
 - For invalid dates or times, show the accepted format and ask for a corrected value.

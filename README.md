@@ -27,7 +27,17 @@ Authenticate interactively before using the other commands:
 timesheet login
 ```
 
-The session is stored at `~/.timesheet-cli/session.json`. Existing sessions created by the earlier TypeScript version remain compatible. Run `login` again when the session expires.
+The session is stored at `~/.timesheet-cli/session.json`. Existing sessions created by the earlier TypeScript version remain compatible. Authentication cookies renewed by the server are saved automatically.
+
+To allow the CLI to reauthenticate after the server fully expires a session, explicitly save the credentials in the operating system's credential vault:
+
+```sh
+timesheet login --save-credentials
+```
+
+This uses macOS Keychain, Windows Credential Manager, or the Secret Service API on Linux. Linux systems without a Secret Service provider continue to support normal cookie sessions and manual login; the command reports a warning if credentials cannot be saved.
+
+Safe read operations reauthenticate and retry once. Add, update, and delete requests are never automatically retried. If a write encounters an expired session, the CLI renews the session when possible and asks you to rerun the command.
 
 Credentials may also come from flags or environment variables:
 
@@ -38,10 +48,18 @@ TIMESHEET_USER=YOUR_LOGIN TIMESHEET_PASS=YOUR_PASSWORD timesheet login
 
 Interactive entry is preferable because `--pass` can expose the password in shell history and process listings, while environment variables can leak through logs or process inspection.
 
+Log out while retaining saved credentials, or remove both forms of authentication:
+
+```sh
+timesheet logout
+timesheet logout --forget-credentials
+```
+
 ## Commands
 
 ```text
-timesheet login [--user LOGIN] [--pass PASSWORD]
+timesheet login [--user LOGIN] [--pass PASSWORD] [--save-credentials]
+timesheet logout [--forget-credentials]
 timesheet list [--limit N] [--all]
 timesheet meta
 timesheet status ENTRY_ID
@@ -86,13 +104,19 @@ Successful commands return an envelope on stdout:
 {"ok":true,"data":{}}
 ```
 
+Successful commands may include nonfatal warnings:
+
+```json
+{"ok":true,"data":{},"warnings":[{"code":"session_persist_failed","message":"..."}]}
+```
+
 Failures return an envelope on stderr and exit nonzero:
 
 ```json
 {"ok":false,"error":{"code":"invalid_input","message":"..."}}
 ```
 
-Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, and `internal_error`.
+Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`, `credential_store_error`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, and `internal_error`. Stable warning codes are `credential_store_unavailable` and `session_persist_failed`.
 
 Read-command data shapes:
 
@@ -111,7 +135,7 @@ Write commands return the action and normalized entry data; delete returns the e
 | `TIMESHEET_SESSION` | Session file location | `~/.timesheet-cli/session.json` |
 | `TIMESHEET_BASE_URL` | Timesheet server URL | `https://luby-timesheet.azurewebsites.net` |
 
-The session file contains active authentication cookies. Do not print, share, or commit it.
+The session file contains active authentication cookies. Do not print, share, or commit it. Credentials saved with `--save-credentials` are kept separately in the operating system vault and are scoped to the configured server origin.
 
 ## Development
 

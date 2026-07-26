@@ -10,17 +10,21 @@ import (
 	"strings"
 
 	"github.com/gustmrg/timesheet-cli/internal/api"
+	"github.com/gustmrg/timesheet-cli/internal/credentials"
 	"github.com/spf13/cobra"
 )
 
 const defaultBaseURL = "https://luby-timesheet.azurewebsites.net"
 
 type app struct {
-	in      io.Reader
-	out     io.Writer
-	errOut  io.Writer
-	json    bool
-	version string
+	in              io.Reader
+	out             io.Writer
+	errOut          io.Writer
+	json            bool
+	version         string
+	credentialStore credentials.Store
+	clients         []*api.Client
+	warnings        []api.Warning
 }
 
 type commandError struct {
@@ -34,7 +38,11 @@ func (e *commandError) Error() string { return e.message }
 func (e *commandError) Unwrap() error { return e.cause }
 
 func Execute(args []string, in io.Reader, out, errOut io.Writer, version string) int {
-	a := &app{in: in, out: out, errOut: errOut, version: version}
+	return executeWithStore(args, in, out, errOut, version, credentials.NewKeyringStore())
+}
+
+func executeWithStore(args []string, in io.Reader, out, errOut io.Writer, version string, store credentials.Store) int {
+	a := &app{in: in, out: out, errOut: errOut, version: version, credentialStore: store}
 	root := a.rootCommand()
 	root.SetArgs(args)
 	root.SetIn(in)
@@ -70,37 +78,113 @@ func (a *app) rootCommand() *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.json, "json", false, "emit machine-readable JSON")
 	root.AddCommand(
-		a.loginCommand(), a.listCommand(), a.metaCommand(), a.statusCommand(),
+		a.loginCommand(), a.logoutCommand(), a.listCommand(), a.metaCommand(), a.statusCommand(),
 		a.addCommand(), a.updateCommand(), a.deleteCommand(), a.versionCommand(),
 	)
 	return root
 }
 
 func (a *app) client() (*api.Client, error) {
-	baseURL := os.Getenv("TIMESHEET_BASE_URL")
-	if baseURL == "" {
-		baseURL = defaultBaseURL
+	baseURL := a.baseURL()
+	sessionFile, err := a.sessionFile()
+	if err != nil {
+		return nil, err
 	}
-	sessionFile := os.Getenv("TIMESHEET_SESSION")
-	if sessionFile == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fail("internal_error", "determine home directory", 1, err)
-		}
-		sessionFile = filepath.Join(home, ".timesheet-cli", "session.json")
-	}
-	client, err := api.New(api.Config{BaseURL: baseURL, SessionFile: sessionFile})
+	client, err := api.New(api.Config{
+		BaseURL:     baseURL,
+		SessionFile: sessionFile,
+		RenewSession: func(client *api.Client) error {
+			return a.renewSession(client, baseURL)
+		},
+	})
 	if err != nil {
 		return nil, classifyAPI(err)
 	}
+	a.clients = append(a.clients, client)
 	return client, nil
 }
 
 func (a *app) success(data any, human func()) error {
+	warnings := append([]api.Warning(nil), a.warnings...)
+	for _, client := range a.clients {
+		for _, warning := range client.Warnings() {
+			warnings = appendWarning(warnings, warning)
+		}
+	}
 	if a.json {
-		return json.NewEncoder(a.out).Encode(map[string]any{"ok": true, "data": data})
+		envelope := map[string]any{"ok": true, "data": data}
+		if len(warnings) != 0 {
+			envelope["warnings"] = warnings
+		}
+		return json.NewEncoder(a.out).Encode(envelope)
 	}
 	human()
+	for _, warning := range warnings {
+		fmt.Fprintf(a.errOut, "warning: %s\n", warning.Message)
+	}
+	return nil
+}
+
+func (a *app) addWarning(code, message string) {
+	a.warnings = appendWarning(a.warnings, api.Warning{Code: code, Message: message})
+}
+
+func appendWarning(warnings []api.Warning, warning api.Warning) []api.Warning {
+	for _, existing := range warnings {
+		if existing.Code == warning.Code {
+			return warnings
+		}
+	}
+	return append(warnings, warning)
+}
+
+func (a *app) baseURL() string {
+	if value := os.Getenv("TIMESHEET_BASE_URL"); value != "" {
+		return value
+	}
+	return defaultBaseURL
+}
+
+func (a *app) sessionFile() (string, error) {
+	if value := os.Getenv("TIMESHEET_SESSION"); value != "" {
+		return value, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fail("internal_error", "determine home directory", 1, err)
+	}
+	return filepath.Join(home, ".timesheet-cli", "session.json"), nil
+}
+
+func (a *app) renewSession(client *api.Client, baseURL string) error {
+	user := os.Getenv("TIMESHEET_USER")
+	password := os.Getenv("TIMESHEET_PASS")
+	fromVault := false
+	if user == "" || password == "" {
+		record, err := a.credentialStore.Get(baseURL)
+		if err != nil {
+			switch {
+			case credentials.IsKind(err, credentials.KindNotFound):
+				return &api.Error{Kind: api.KindAuth, Message: "session expired and no saved credentials are available; run `timesheet login --save-credentials`"}
+			case credentials.IsKind(err, credentials.KindCorrupt):
+				return &api.Error{Kind: api.KindAuth, Message: "session expired and saved credentials are invalid; run `timesheet login --save-credentials`"}
+			default:
+				return &api.Error{Kind: api.KindAuth, Message: "session expired and the operating system credential vault is unavailable; run `timesheet login`"}
+			}
+		}
+		user, password = record.Username, record.Password
+		fromVault = true
+	}
+	if err := client.Login(user, password); err != nil {
+		if fromVault && api.IsKind(err, api.KindLoginFailed) {
+			message := "saved credentials were rejected and removed; run `timesheet login --save-credentials`"
+			if deleteErr := a.credentialStore.Delete(baseURL); deleteErr != nil {
+				message = "saved credentials were rejected and may still remain in the operating system vault; remove them manually, then run `timesheet login --save-credentials`"
+			}
+			return &api.Error{Kind: api.KindLoginFailed, Message: message}
+		}
+		return err
+	}
 	return nil
 }
 

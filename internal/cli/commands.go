@@ -2,15 +2,16 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gustmrg/timesheet-cli/internal/api"
+	"github.com/gustmrg/timesheet-cli/internal/credentials"
 	"github.com/gustmrg/timesheet-cli/internal/webparse"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -57,6 +58,7 @@ func (a *app) versionCommand() *cobra.Command {
 
 func (a *app) loginCommand() *cobra.Command {
 	var user, password string
+	var saveCredentials bool
 	cmd := &cobra.Command{Use: "login", Short: "Authenticate and save a session", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
 		if user == "" {
 			user = os.Getenv("TIMESHEET_USER")
@@ -84,15 +86,66 @@ func (a *app) loginCommand() *cobra.Command {
 		if err := client.Login(user, password); err != nil {
 			return classifyAPI(err)
 		}
-		session := os.Getenv("TIMESHEET_SESSION")
-		if session == "" {
-			home, _ := os.UserHomeDir()
-			session = filepath.Join(home, ".timesheet-cli", "session.json")
+		session, sessionErr := a.sessionFile()
+		if sessionErr != nil {
+			return sessionErr
 		}
-		return a.success(map[string]any{"authenticated": true, "sessionFile": session}, func() { fmt.Fprintf(a.out, "logged in — session saved to %s\n", session) })
+		credentialsSaved := false
+		if saveCredentials {
+			record := credentials.Record{Username: user, Password: password}
+			if err := a.credentialStore.Set(a.baseURL(), record); err != nil {
+				a.addWarning("credential_store_unavailable", "logged in, but could not save credentials in the operating system vault; automatic reauthentication is unavailable")
+			} else {
+				credentialsSaved = true
+			}
+		}
+		data := map[string]any{"authenticated": true, "sessionFile": session, "credentialsSaved": credentialsSaved}
+		return a.success(data, func() {
+			fmt.Fprintf(a.out, "logged in — session saved to %s\n", session)
+			if credentialsSaved {
+				fmt.Fprintln(a.out, "credentials saved in the operating system vault")
+			}
+		})
 	}}
 	cmd.Flags().StringVar(&user, "user", "", "login username")
 	cmd.Flags().StringVar(&password, "pass", "", "login password (may be visible in process listings)")
+	cmd.Flags().BoolVar(&saveCredentials, "save-credentials", false, "save credentials in the operating system vault")
+	return cmd
+}
+
+func (a *app) logoutCommand() *cobra.Command {
+	var forgetCredentials bool
+	cmd := &cobra.Command{Use: "logout", Short: "Remove the saved session", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
+		session, err := a.sessionFile()
+		if err != nil {
+			return err
+		}
+		sessionRemoved := false
+		if removeErr := os.Remove(session); removeErr == nil {
+			sessionRemoved = true
+		} else if !errors.Is(removeErr, os.ErrNotExist) {
+			return fail("internal_error", "remove saved session", 1, removeErr)
+		}
+		credentialsForgotten := false
+		if forgetCredentials {
+			if deleteErr := a.credentialStore.Delete(a.baseURL()); deleteErr != nil {
+				return fail("credential_store_error", "session cleared, but saved credentials may remain in the operating system vault", 1, deleteErr)
+			}
+			credentialsForgotten = true
+		}
+		data := map[string]any{
+			"loggedOut":            true,
+			"sessionRemoved":       sessionRemoved,
+			"credentialsForgotten": credentialsForgotten,
+		}
+		return a.success(data, func() {
+			fmt.Fprintln(a.out, "logged out")
+			if credentialsForgotten {
+				fmt.Fprintln(a.out, "saved credentials removed from the operating system vault")
+			}
+		})
+	}}
+	cmd.Flags().BoolVar(&forgetCredentials, "forget-credentials", false, "also remove saved credentials from the operating system vault")
 	return cmd
 }
 
@@ -201,7 +254,7 @@ func (a *app) addCommand() *cobra.Command {
 		}
 		created, apiErr := client.Create(entry)
 		if apiErr != nil {
-			return classifyAPI(apiErr)
+			return a.classifyMutationError(client, apiErr)
 		}
 		normalized.ID = created.ID
 		return a.success(map[string]any{"action": "created", "entry": normalized}, func() {
@@ -251,7 +304,7 @@ func (a *app) updateCommand() *cobra.Command {
 			return resolveErr
 		}
 		if apiErr := client.Update(id, entry); apiErr != nil {
-			return classifyAPI(apiErr)
+			return a.classifyMutationError(client, apiErr)
 		}
 		normalized.ID = id
 		return a.success(map[string]any{"action": "updated", "entry": normalized}, func() {
@@ -296,12 +349,22 @@ func (a *app) deleteCommand() *cobra.Command {
 			}
 		}
 		if apiErr := client.Delete(id); apiErr != nil {
-			return classifyAPI(apiErr)
+			return a.classifyMutationError(client, apiErr)
 		}
 		return a.success(map[string]any{"id": id, "deleted": true}, func() { fmt.Fprintf(a.out, "deleted entry %d\n", id) })
 	}}
 	cmd.Flags().BoolVar(&yes, "yes", false, "delete without prompting")
 	return cmd
+}
+
+func (a *app) classifyMutationError(client *api.Client, err error) error {
+	if !api.IsKind(err, api.KindAuth) {
+		return classifyAPI(err)
+	}
+	if renewErr := client.Renew(); renewErr != nil {
+		return classifyAPI(renewErr)
+	}
+	return fail("auth_required", "session renewed; rerun the command to confirm the write", 3, err)
 }
 
 type entryBase struct {
