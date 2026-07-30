@@ -5,6 +5,8 @@ REPOSITORY="gustmrg/timesheet-cli"
 BINARY="timesheet"
 VERSION="${VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+API_ROOT="https://api.github.com/repos/$REPOSITORY"
 
 fail() {
   printf 'error: %s\n' "$*" >&2
@@ -13,6 +15,16 @@ fail() {
 
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 command -v tar >/dev/null 2>&1 || fail "tar is required"
+
+api_request() {
+  accept=$1
+  shift
+  if [ -n "$TOKEN" ]; then
+    curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: $accept" "$@"
+  else
+    curl -fsSL -H "Accept: $accept" "$@"
+  fi
+}
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in
@@ -27,23 +39,56 @@ case "$arch" in
   *) fail "unsupported architecture: $(uname -m) (supported: amd64, arm64)" ;;
 esac
 
-if [ "$VERSION" = "latest" ]; then
-  release_url="https://github.com/$REPOSITORY/releases/latest"
-  resolved_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$release_url") || fail "could not determine the latest release"
-  VERSION=$(printf '%s' "$resolved_url" | sed 's#^.*/tag/v##')
-  [ -n "$VERSION" ] || fail "could not determine the latest release version"
-else
-  VERSION=${VERSION#v}
-fi
-
-archive="${REPOSITORY##*/}_${VERSION}_${os}_${arch}.tar.gz"
-base_url="https://github.com/$REPOSITORY/releases/download/v$VERSION"
 tmp_dir=$(mktemp -d 2>/dev/null || mktemp -d -t timesheet-install)
 trap 'rm -rf "$tmp_dir"' EXIT
+release_json="$tmp_dir/release.json"
+auth_hint=""
+[ -n "$TOKEN" ] || auth_hint="; set GH_TOKEN if the repository is private"
 
+if [ "$VERSION" = "latest" ]; then
+  release_endpoint="$API_ROOT/releases/latest"
+else
+  VERSION=${VERSION#v}
+  release_endpoint="$API_ROOT/releases/tags/v$VERSION"
+fi
+
+api_request "application/vnd.github+json" -o "$release_json" "$release_endpoint" || fail "could not retrieve release metadata$auth_hint"
+
+if [ "$VERSION" = "latest" ]; then
+  VERSION=$(awk -F '"' '/"tag_name":/ { tag=$4; sub(/^v/, "", tag); print tag; exit }' "$release_json")
+  [ -n "$VERSION" ] || fail "could not determine the latest release version"
+fi
+case "$VERSION" in
+  *[!0-9A-Za-z._-]*) fail "invalid release version: $VERSION" ;;
+esac
+
+asset_id() {
+  awk -v file="$1" '
+    index($0, "/releases/assets/") {
+      id=$0
+      sub(/^.*\/releases\/assets\//, "", id)
+      sub(/[^0-9].*$/, "", id)
+    }
+    {
+      line=$0
+      gsub(/[[:space:]]/, "", line)
+    }
+    index(line, "\"name\":\"" file "\"") && id != "" { print id; exit }
+  ' "$release_json"
+}
+
+download_asset() {
+  name=$1
+  destination=$2
+  id=$(asset_id "$name")
+  [ -n "$id" ] || fail "release asset was not found: $name"
+  api_request "application/octet-stream" -o "$destination" "$API_ROOT/releases/assets/$id" || fail "could not download release asset: $name"
+}
+
+archive="${REPOSITORY##*/}_${VERSION}_${os}_${arch}.tar.gz"
 printf 'Downloading timesheet-cli v%s for %s/%s...\n' "$VERSION" "$os" "$arch"
-curl -fsSL "$base_url/$archive" -o "$tmp_dir/$archive" || fail "could not download release archive"
-curl -fsSL "$base_url/checksums.txt" -o "$tmp_dir/checksums.txt" || fail "could not download release checksums"
+download_asset "$archive" "$tmp_dir/$archive"
+download_asset "checksums.txt" "$tmp_dir/checksums.txt"
 
 expected=$(awk -v file="$archive" '$2 == file { print $1; exit }' "$tmp_dir/checksums.txt")
 [ -n "$expected" ] || fail "archive checksum was not found"

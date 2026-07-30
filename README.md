@@ -17,6 +17,18 @@ curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/
 curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.3.0 sh
 ```
 
+For a private repository, export a fine-grained token with read-only Contents access to this repository (a classic token needs the `repo` scope). The token authenticates both the initial script request and the script's release API requests:
+
+```sh
+export GH_TOKEN="..."
+curl -fsSL \
+  -H "Authorization: Bearer $GH_TOKEN" \
+  -H "Accept: application/vnd.github.raw+json" \
+  "https://api.github.com/repos/gustmrg/timesheet-cli/contents/scripts/install.sh?ref=main" | sh
+```
+
+`GITHUB_TOKEN` is also accepted when `GH_TOKEN` is unset. Avoid saving tokens in shell history or files, and unset the token when finished.
+
 Windows users can download the appropriate archive from [GitHub Releases](https://github.com/gustmrg/timesheet-cli/releases), extract it, and place `timesheet.exe` on their `PATH`.
 
 Developers with Go 1.26 or later can install from source:
