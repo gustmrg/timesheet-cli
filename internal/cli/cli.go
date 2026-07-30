@@ -156,30 +156,57 @@ func (a *app) sessionFile() (string, error) {
 	return filepath.Join(home, ".timesheet-cli", "session.json"), nil
 }
 
+func (a *app) credentialsFile() (string, error) {
+	if value := os.Getenv("TIMESHEET_CREDENTIALS"); value != "" {
+		return value, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fail("internal_error", "determine home directory", 1, err)
+	}
+	return filepath.Join(home, ".timesheet-cli", "credentials.json"), nil
+}
+
+func (a *app) fileCredentialStore() (*credentials.FileStore, string, error) {
+	path, err := a.credentialsFile()
+	if err != nil {
+		return nil, "", err
+	}
+	return credentials.NewFileStore(path), path, nil
+}
+
 func (a *app) renewSession(client *api.Client, baseURL string) error {
 	user := os.Getenv("TIMESHEET_USER")
 	password := os.Getenv("TIMESHEET_PASS")
-	fromVault := false
+	var credentialSource credentials.Store
 	if user == "" || password == "" {
-		record, err := a.credentialStore.Get(baseURL)
-		if err != nil {
+		record, storeErr := a.credentialStore.Get(baseURL)
+		credentialSource = a.credentialStore
+		if storeErr != nil {
+			fileStore, _, fileStoreErr := a.fileCredentialStore()
+			if fileStoreErr != nil {
+				return fileStoreErr
+			}
+			record, storeErr = fileStore.Get(baseURL)
+			credentialSource = fileStore
+		}
+		if storeErr != nil {
 			switch {
-			case credentials.IsKind(err, credentials.KindNotFound):
-				return &api.Error{Kind: api.KindAuth, Message: "session expired and no saved credentials are available; run `timesheet login --save-credentials`"}
-			case credentials.IsKind(err, credentials.KindCorrupt):
-				return &api.Error{Kind: api.KindAuth, Message: "session expired and saved credentials are invalid; run `timesheet login --save-credentials`"}
+			case credentials.IsKind(storeErr, credentials.KindCorrupt):
+				return &api.Error{Kind: api.KindAuth, Message: "session expired and saved credentials are invalid; run `timesheet login --save-credentials --credential-store file`"}
+			case credentials.IsKind(storeErr, credentials.KindStore):
+				return &api.Error{Kind: api.KindAuth, Message: "session expired and the credentials file is unavailable; check its ownership and permissions or run `timesheet login`"}
 			default:
-				return &api.Error{Kind: api.KindAuth, Message: "session expired and the operating system credential vault is unavailable; run `timesheet login`"}
+				return &api.Error{Kind: api.KindAuth, Message: "session expired and no saved credentials are available; run `timesheet login --save-credentials --credential-store file`"}
 			}
 		}
 		user, password = record.Username, record.Password
-		fromVault = true
 	}
 	if err := client.Login(user, password); err != nil {
-		if fromVault && api.IsKind(err, api.KindLoginFailed) {
+		if credentialSource != nil && api.IsKind(err, api.KindLoginFailed) {
 			message := "saved credentials were rejected and removed; run `timesheet login --save-credentials`"
-			if deleteErr := a.credentialStore.Delete(baseURL); deleteErr != nil {
-				message = "saved credentials were rejected and may still remain in the operating system vault; remove them manually, then run `timesheet login --save-credentials`"
+			if deleteErr := credentialSource.Delete(baseURL); deleteErr != nil {
+				message = "saved credentials were rejected and could not be removed; remove them manually, then run `timesheet login --save-credentials`"
 			}
 			return &api.Error{Kind: api.KindLoginFailed, Message: message}
 		}

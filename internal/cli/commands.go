@@ -57,9 +57,15 @@ func (a *app) versionCommand() *cobra.Command {
 }
 
 func (a *app) loginCommand() *cobra.Command {
-	var user, password string
+	var user, password, credentialStore string
 	var saveCredentials bool
 	cmd := &cobra.Command{Use: "login", Short: "Authenticate and save a session", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
+		if credentialStore != "system" && credentialStore != "file" {
+			return fail("invalid_input", "credential store must be `system` or `file`", 2, nil)
+		}
+		if !saveCredentials && credentialStore != "system" {
+			return fail("invalid_input", "--credential-store requires --save-credentials", 2, nil)
+		}
 		if user == "" {
 			user = os.Getenv("TIMESHEET_USER")
 		}
@@ -91,25 +97,48 @@ func (a *app) loginCommand() *cobra.Command {
 			return sessionErr
 		}
 		credentialsSaved := false
+		credentialLocation := ""
 		if saveCredentials {
+			var store credentials.Store = a.credentialStore
+			if credentialStore == "file" {
+				fileStore, path, fileErr := a.fileCredentialStore()
+				if fileErr != nil {
+					return fileErr
+				}
+				store = fileStore
+				credentialLocation = path
+			}
 			record := credentials.Record{Username: user, Password: password}
-			if err := a.credentialStore.Set(a.baseURL(), record); err != nil {
-				a.addWarning("credential_store_unavailable", "logged in, but could not save credentials in the operating system vault; automatic reauthentication is unavailable")
+			if err := store.Set(a.baseURL(), record); err != nil {
+				location := "the operating system vault"
+				if credentialStore == "file" {
+					location = "the protected credentials file"
+				}
+				a.addWarning("credential_store_unavailable", "logged in, but could not save credentials in "+location+"; automatic reauthentication is unavailable")
 			} else {
 				credentialsSaved = true
 			}
 		}
 		data := map[string]any{"authenticated": true, "sessionFile": session, "credentialsSaved": credentialsSaved}
+		if credentialsSaved {
+			data["credentialStore"] = credentialStore
+		}
+		if credentialLocation != "" {
+			data["credentialsFile"] = credentialLocation
+		}
 		return a.success(data, func() {
 			fmt.Fprintf(a.out, "logged in — session saved to %s\n", session)
-			if credentialsSaved {
+			if credentialsSaved && credentialStore == "file" {
+				fmt.Fprintf(a.out, "credentials saved to %s (protected by file permissions)\n", credentialLocation)
+			} else if credentialsSaved {
 				fmt.Fprintln(a.out, "credentials saved in the operating system vault")
 			}
 		})
 	}}
 	cmd.Flags().StringVar(&user, "user", "", "login username")
 	cmd.Flags().StringVar(&password, "pass", "", "login password (may be visible in process listings)")
-	cmd.Flags().BoolVar(&saveCredentials, "save-credentials", false, "save credentials in the operating system vault")
+	cmd.Flags().BoolVar(&saveCredentials, "save-credentials", false, "save credentials for automatic reauthentication")
+	cmd.Flags().StringVar(&credentialStore, "credential-store", "system", "credential store: system or file")
 	return cmd
 }
 
@@ -128,8 +157,17 @@ func (a *app) logoutCommand() *cobra.Command {
 		}
 		credentialsForgotten := false
 		if forgetCredentials {
-			if deleteErr := a.credentialStore.Delete(a.baseURL()); deleteErr != nil {
-				return fail("credential_store_error", "session cleared, but saved credentials may remain in the operating system vault", 1, deleteErr)
+			systemDeleteErr := a.credentialStore.Delete(a.baseURL())
+			fileStore, _, fileStoreErr := a.fileCredentialStore()
+			if fileStoreErr != nil {
+				return fileStoreErr
+			}
+			fileDeleteErr := fileStore.Delete(a.baseURL())
+			if systemDeleteErr != nil && !credentials.IsKind(systemDeleteErr, credentials.KindUnavailable) && !credentials.IsKind(systemDeleteErr, credentials.KindUnsupported) {
+				return fail("credential_store_error", "session cleared, but saved credentials may remain in the operating system vault", 1, systemDeleteErr)
+			}
+			if fileDeleteErr != nil {
+				return fail("credential_store_error", "session cleared, but saved credentials may remain in the credentials file", 1, fileDeleteErr)
 			}
 			credentialsForgotten = true
 		}

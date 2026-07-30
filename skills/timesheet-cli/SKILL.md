@@ -26,12 +26,12 @@ Refer to the selected invocation as `<timesheet>` in the workflow below. Do not 
 
 ## Protect authentication
 
-The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `TIMESHEET_SESSION` can override that location.
+The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `TIMESHEET_SESSION` can override that location. On explicitly configured headless systems, credentials may be stored at `~/.timesheet-cli/credentials.json`; `TIMESHEET_CREDENTIALS` can override that location.
 
-- Never read, print, copy, summarize, commit, or expose the session file. It contains active authentication cookies.
+- Never read, print, copy, summarize, commit, or expose the session or credentials file. They contain authentication secrets.
 - Never ask the user to paste a password into the conversation.
 - Do not put passwords in command arguments, environment variables, logs, or scripts on the user's behalf.
-- The CLI automatically persists sliding cookie renewal. Credentials are stored separately in macOS Keychain, Windows Credential Manager, or Linux Secret Service only when the user runs `<timesheet> login --save-credentials`.
+- The CLI automatically persists sliding cookie renewal. Credentials are stored separately in macOS Keychain, Windows Credential Manager, or Linux Secret Service only when the user runs `<timesheet> login --save-credentials`. Permanently headless systems can explicitly use a mode-`0600` plaintext file with `--credential-store file`; never select it without the user's informed approval.
 - Read commands can automatically reauthenticate and retry once when saved credentials are available. Write commands are never automatically retried.
 - If authentication is missing and automatic renewal is unavailable, ask the user to run `<timesheet> login` in an interactive terminal. Mention `--save-credentials` only when they want future automatic reauthentication.
 
@@ -41,6 +41,7 @@ The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `T
 | --- | --- |
 | Authenticate | `<timesheet> login --json` |
 | Authenticate and opt into automatic renewal | `<timesheet> login --save-credentials --json` |
+| Authenticate headlessly with explicit file storage | `<timesheet> login --save-credentials --credential-store file --json` |
 | Remove the cookie session | `<timesheet> logout --json` |
 | Remove the session and saved credentials | `<timesheet> logout --forget-credentials --json` |
 | List recent entries | `<timesheet> list --json` |

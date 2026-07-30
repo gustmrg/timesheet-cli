@@ -14,7 +14,7 @@ The script detects your operating system and architecture, verifies the release 
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
-curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.3.0 sh
+curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.4.0 sh
 ```
 
 For a private repository, export a fine-grained token with read-only Contents access to this repository (a classic token needs the `repo` scope). The token authenticates both the initial script request and the script's release API requests:
@@ -60,7 +60,13 @@ To allow the CLI to reauthenticate after the server fully expires a session, exp
 timesheet login --save-credentials
 ```
 
-This uses macOS Keychain, Windows Credential Manager, or the Secret Service API on Linux. Linux systems without a Secret Service provider continue to support normal cookie sessions and manual login; the command reports a warning if credentials cannot be saved.
+This uses macOS Keychain, Windows Credential Manager, or the Secret Service API on Linux. For a permanently headless Linux system without Secret Service, explicitly select the protected file store instead:
+
+```sh
+timesheet login --save-credentials --credential-store file
+```
+
+The CLI creates `~/.timesheet-cli/credentials.json` automatically, creates its parent directory with mode `0700`, and writes the file atomically with mode `0600`. The file contains plaintext credentials protected by Unix ownership and permissions; anyone with root access or access to the account can read it. The CLI never silently falls back from the system vault to file storage.
 
 Safe read operations reauthenticate and retry once. Add, update, and delete requests are never automatically retried. If a write encounters an expired session, the CLI renews the session when possible and asks you to rerun the command.
 
@@ -83,7 +89,7 @@ timesheet logout --forget-credentials
 ## Commands
 
 ```text
-timesheet login [--user LOGIN] [--pass PASSWORD] [--save-credentials]
+timesheet login [--user LOGIN] [--pass PASSWORD] [--save-credentials] [--credential-store system|file]
 timesheet logout [--forget-credentials]
 timesheet list [--limit N] [--all]
 timesheet meta
@@ -158,9 +164,10 @@ Write commands return the action and normalized entry data; delete returns the e
 | `TIMESHEET_USER` | Login username | Interactive prompt |
 | `TIMESHEET_PASS` | Login password | Interactive prompt |
 | `TIMESHEET_SESSION` | Session file location | `~/.timesheet-cli/session.json` |
+| `TIMESHEET_CREDENTIALS` | File credential store location | `~/.timesheet-cli/credentials.json` |
 | `TIMESHEET_BASE_URL` | Timesheet server URL | `https://luby-timesheet.azurewebsites.net` |
 
-The session file contains active authentication cookies. Do not print, share, or commit it. Credentials saved with `--save-credentials` are kept separately in the operating system vault and are scoped to the configured server origin.
+The session and credentials files contain authentication secrets. Do not print, share, or commit them. Credentials saved with `--save-credentials` are scoped to the configured server origin; the `system` store uses the operating system vault, while the explicitly selected `file` store relies on file ownership and mode `0600`.
 
 ## Development
 

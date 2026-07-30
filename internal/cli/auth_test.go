@@ -53,9 +53,11 @@ func runWithStore(t *testing.T, store credentials.Store, args []string, stdin st
 
 func configureAuthTest(t *testing.T, baseURL string) string {
 	t.Helper()
-	session := filepath.Join(t.TempDir(), "session.json")
+	directory := t.TempDir()
+	session := filepath.Join(directory, "session.json")
 	t.Setenv("TIMESHEET_BASE_URL", baseURL)
 	t.Setenv("TIMESHEET_SESSION", session)
+	t.Setenv("TIMESHEET_CREDENTIALS", filepath.Join(directory, "credentials.json"))
 	t.Setenv("TIMESHEET_USER", "")
 	t.Setenv("TIMESHEET_PASS", "")
 	return session
@@ -105,6 +107,66 @@ func TestLoginCredentialSavingIsExplicitAndFailureIsWarning(t *testing.T) {
 	code, _, _ = runWithStore(t, store, []string{"login", "--user", "alice", "--pass", "wrong", "--save-credentials", "--json"}, "")
 	if code != 3 || store.setCalls != previousSets {
 		t.Fatalf("failed login = code %d, credential sets %d; want %d", code, store.setCalls, previousSets)
+	}
+}
+
+func TestFileCredentialStoreSavesAndRenewsOnHeadlessSystems(t *testing.T) {
+	readCalls, loginCalls := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			if r.Method == http.MethodGet {
+				io.WriteString(w, `<input name="__RequestVerificationToken" value="token">`)
+				return
+			}
+			loginCalls++
+			if r.FormValue("Login") != "alice" || r.FormValue("Password") != "secret" {
+				io.WriteString(w, `<input name="Login"><input name="Password">`)
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "active", Path: "/"})
+			io.WriteString(w, `<html>authenticated</html>`)
+		case "/Worksheet/Read":
+			readCalls++
+			if cookie, err := r.Cookie("session"); err != nil || cookie.Value != "active" {
+				io.WriteString(w, `<input name="Login"><input name="Password">`)
+				return
+			}
+			io.WriteString(w, `<table id="tbWorksheet"><tbody></tbody></table>`)
+		}
+	}))
+	defer server.Close()
+	configureAuthTest(t, server.URL)
+	store := &fakeCredentialStore{getErr: &credentials.Error{Kind: credentials.KindUnavailable, Message: "vault unavailable"}}
+
+	code, stdout, stderr := runWithStore(t, store, []string{"login", "--user", "alice", "--pass", "secret", "--save-credentials", "--credential-store", "file", "--json"}, "")
+	if code != 0 || stderr != "" || store.setCalls != 0 || !strings.Contains(stdout, `"credentialsSaved":true`) || !strings.Contains(stdout, `"credentialStore":"file"`) {
+		t.Fatalf("file login = code %d stdout %q stderr %q system sets %d", code, stdout, stderr, store.setCalls)
+	}
+	credentialsPath := os.Getenv("TIMESHEET_CREDENTIALS")
+	info, err := os.Stat(credentialsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("credentials file mode = %v; want 0600", info.Mode().Perm())
+	}
+	if err := os.Remove(os.Getenv("TIMESHEET_SESSION")); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr = runWithStore(t, store, []string{"list", "--json"}, "")
+	if code != 0 || stderr != "" || loginCalls != 2 || readCalls != 2 {
+		t.Fatalf("file renewal = code %d stderr %q logins %d reads %d", code, stderr, loginCalls, readCalls)
+	}
+}
+
+func TestFileCredentialStoreMustBeExplicit(t *testing.T) {
+	configureAuthTest(t, "https://example.test")
+	store := &fakeCredentialStore{}
+	code, _, stderr := runWithStore(t, store, []string{"login", "--credential-store", "file", "--json"}, "")
+	if code != 2 || !strings.Contains(stderr, `"code":"invalid_input"`) || store.setCalls != 0 {
+		t.Fatalf("implicit file store = code %d stderr %q sets %d", code, stderr, store.setCalls)
 	}
 }
 
