@@ -1,6 +1,6 @@
 ---
 name: timesheet-cli
-description: Manage Luby Timesheet entries with the local `timesheet` CLI. Use this skill whenever the user asks to log hours, create or edit a timesheet entry, list recent time records, inspect customers/projects/categories, check approval status, delete an entry, authenticate the timesheet CLI, or automate Luby Timesheet work—even when they do not explicitly mention this skill or the CLI.
+description: Manage Luby Timesheet entries and inspect invoice processes with the local `timesheet` CLI. Use this skill whenever the user asks to log hours, create or edit a timesheet entry, list recent time records, inspect customers/projects/categories, check approval status, list pending or sent invoices, preview an invoice process, delete an entry, authenticate the timesheet CLI, or automate Luby Timesheet work—even when they do not explicitly mention this skill or the CLI.
 compatibility: Requires the `timesheet` executable on PATH, or Go 1.26+ with a local checkout of timesheet-cli.
 ---
 
@@ -49,6 +49,10 @@ The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `T
 | Limit returned entries | `<timesheet> list --limit N --json` |
 | Discover customers, projects, and categories | `<timesheet> meta --json` |
 | Check an entry's evaluation | `<timesheet> status ID --json` |
+| List invoice processes | `<timesheet> invoice list --json` |
+| Search invoice processes | `<timesheet> invoice list --search TEXT --json` |
+| Filter pending or sent invoices | `<timesheet> invoice list --status pending\|sent --json` |
+| Preview an invoice process | `<timesheet> invoice preview PROCESS_ID --json` |
 | Create an entry | `<timesheet> add ... --json` |
 | Change an entry | `<timesheet> update ID ... --json` |
 | Delete an entry | `<timesheet> delete ID --json` |
@@ -96,9 +100,13 @@ Examples:
 <timesheet> list --limit 10 --json
 <timesheet> meta --json
 <timesheet> status 12345 --json
+<timesheet> invoice list --status pending --json
+<timesheet> invoice preview 901 --json
 ```
 
 Summarize the result in the format the user requested. Preserve entry IDs because they are needed for status checks, updates, and deletion.
+
+Invoice operations are read-only. Preserve process IDs because they connect the list and preview commands. The list returns normalized `pending` or `sent` status values and supports `--limit`, `--offset`, `--search`, `--status`, and `--all`. The preview returns the customer/project breakdown and monetized/non-monetized hours and amounts for one process. This CLI intentionally does not upload, open, or download invoice files.
 
 ## Create workflow
 

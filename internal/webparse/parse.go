@@ -28,6 +28,15 @@ type Option struct {
 	Name string `json:"name"`
 }
 
+type InvoicePreviewItem struct {
+	Customer           string
+	Project            string
+	MonetizedHours     string
+	NonMonetizedHours  string
+	MonetizedAmount    string
+	NonMonetizedAmount string
+}
+
 func Entries(r io.Reader) ([]Entry, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
@@ -104,6 +113,38 @@ func Selects(r io.Reader) (map[string][]Option, error) {
 		}
 	})
 	return result, nil
+}
+
+func InvoicePreviewItems(r io.Reader) ([]InvoicePreviewItem, error) {
+	doc, err := html.Parse(r)
+	if err != nil {
+		return nil, fmt.Errorf("parse invoice preview HTML: %w", err)
+	}
+	table := find(doc, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && n.Data == "table" && attr(n, "id") == "tbWorksheet"
+	})
+	if table == nil {
+		return []InvoicePreviewItem{}, nil
+	}
+	var items []InvoicePreviewItem
+	walk(table, func(n *html.Node) {
+		if n.Type != html.ElementNode || n.Data != "tr" {
+			return
+		}
+		cells := directElements(n, "td")
+		if len(cells) < 6 {
+			return
+		}
+		items = append(items, InvoicePreviewItem{
+			Customer: text(cells[0]), Project: text(cells[1]),
+			MonetizedHours: text(cells[2]), NonMonetizedHours: text(cells[3]),
+			MonetizedAmount: text(cells[4]), NonMonetizedAmount: text(cells[5]),
+		})
+	})
+	if items == nil {
+		items = []InvoicePreviewItem{}
+	}
+	return items, nil
 }
 
 func IsLoginPage(body []byte) bool {

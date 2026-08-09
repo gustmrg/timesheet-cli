@@ -739,38 +739,7 @@ func printEntryTable(w io.Writer, entries []webparse.Entry) {
 	for i, entry := range entries {
 		rows[i] = []string{strconv.FormatInt(entry.ID, 10), entry.Date, entry.Start + "–" + entry.End, entry.Total, entry.Status, entry.Project, entry.Category}
 	}
-	widths := make([]int, len(head))
-	for i, value := range head {
-		widths[i] = len([]rune(value))
-	}
-	for _, row := range rows {
-		for i, value := range row {
-			if width := len([]rune(value)); width > widths[i] {
-				widths[i] = width
-			}
-		}
-	}
-	line := func(values []string) {
-		for i, value := range values {
-			if i > 0 {
-				fmt.Fprint(w, "  ")
-			}
-			fmt.Fprint(w, value)
-			if i < len(values)-1 {
-				fmt.Fprint(w, strings.Repeat(" ", widths[i]-len([]rune(value))))
-			}
-		}
-		fmt.Fprintln(w)
-	}
-	line(head)
-	separators := make([]string, len(widths))
-	for i, width := range widths {
-		separators[i] = strings.Repeat("─", width)
-	}
-	line(separators)
-	for _, row := range rows {
-		line(row)
-	}
+	printTable(w, head, rows)
 }
 func printMeta(w io.Writer, customers []metaCustomer) {
 	for _, customer := range customers {

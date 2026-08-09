@@ -1,6 +1,6 @@
 # timesheet-cli
 
-A cross-platform command-line client for managing entries in [Luby Timesheet](https://luby-timesheet.azurewebsites.net). It authenticates directly against the site's HTTP endpoints; no browser or language runtime is needed after installation.
+A cross-platform command-line client for managing entries and inspecting invoices in [Luby Timesheet](https://luby-timesheet.azurewebsites.net). It authenticates directly against the site's HTTP endpoints; no browser or language runtime is needed after installation.
 
 ## Installation
 
@@ -14,7 +14,7 @@ The script detects your operating system and architecture, verifies the release 
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
-curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.4.0 sh
+curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.5.0 sh
 ```
 
 For a private repository, export a fine-grained token with read-only Contents access to this repository (a classic token needs the `repo` scope). The token authenticates both the initial script request and the script's release API requests:
@@ -94,6 +94,8 @@ timesheet logout [--forget-credentials]
 timesheet list [--limit N] [--all]
 timesheet meta
 timesheet status ENTRY_ID
+timesheet invoice list [--limit N] [--offset N] [--search TEXT] [--status pending|sent] [--all]
+timesheet invoice preview PROCESS_ID
 timesheet add --customer CUSTOMER --project PROJECT --category CATEGORY \
   [--date DATE] --start HH:mm --end HH:mm --desc DESCRIPTION [--not-monetize]
 timesheet update ENTRY_ID [entry flags] [--monetize | --not-monetize]
@@ -111,6 +113,9 @@ Examples:
 timesheet list --limit 5
 timesheet meta --json
 timesheet status 12345
+timesheet invoice list --status pending
+timesheet invoice list --search "developer name" --limit 10
+timesheet invoice preview 901 --json
 
 timesheet add \
   --customer ernst \
@@ -154,8 +159,12 @@ Read-command data shapes:
 - `list`: `entries`, `returned`, and `total`
 - `meta`: nested `customers`, `projects`, and `categories`
 - `status`: `entryId`, normalized `state`, `manager`, and `created`
+- `invoice list`: normalized `invoices` plus `offset`, `returned`, `total`, and `filtered`
+- `invoice preview`: `processId` and project-level `items` with monetized/non-monetized hours and amounts
 
 Write commands return the action and normalized entry data; delete returns the entry ID and whether deletion occurred.
+
+Invoice commands are read-only. Invoice status is normalized to `pending` or `sent`; `--status` filters that normalized status, while `--search` uses the server's invoice search. Use `--offset` with `--limit` for pagination or `--all` to return every matching invoice.
 
 ## Configuration
 
