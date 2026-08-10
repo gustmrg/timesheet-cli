@@ -14,7 +14,7 @@ The script detects your operating system and architecture, verifies the release 
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
-curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.5.0 sh
+curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | VERSION=0.6.0 sh
 ```
 
 For a private repository, export a fine-grained token with read-only Contents access to this repository (a classic token needs the `repo` scope). The token authenticates both the initial script request and the script's release API requests:
