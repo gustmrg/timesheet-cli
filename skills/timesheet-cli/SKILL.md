@@ -1,6 +1,6 @@
 ---
 name: timesheet-cli
-description: Manage Luby Timesheet entries and inspect invoice processes with the local `timesheet` CLI. Use this skill whenever the user asks to log hours, create or edit a timesheet entry, list recent time records, inspect customers/projects/categories, check approval status, list pending or sent invoices, preview an invoice process, delete an entry, authenticate the timesheet CLI, or automate Luby Timesheet work—even when they do not explicitly mention this skill or the CLI.
+description: Manage Luby Timesheet entries, inspect invoice processes, and upgrade the installed CLI with the local `timesheet` command. Use this skill whenever the user asks to log hours, create or edit a timesheet entry, list recent time records, inspect customers/projects/categories, check approval status, list pending or sent invoices, preview an invoice process, upgrade the timesheet CLI, delete an entry, authenticate the timesheet CLI, or automate Luby Timesheet work—even when they do not explicitly mention this skill or the CLI.
 compatibility: Requires the `timesheet` executable on PATH, or Go 1.26+ with a local checkout of timesheet-cli.
 ---
 
@@ -53,6 +53,7 @@ The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `T
 | Search invoice processes | `<timesheet> invoice list --search TEXT --json` |
 | Filter pending or sent invoices | `<timesheet> invoice list --status pending\|sent --json` |
 | Preview an invoice process | `<timesheet> invoice preview PROCESS_ID --json` |
+| Upgrade the installed CLI | `<timesheet> upgrade --json` |
 | Create an entry | `<timesheet> add ... --json` |
 | Change an entry | `<timesheet> update ID ... --json` |
 | Delete an entry | `<timesheet> delete ID --json` |
@@ -102,11 +103,18 @@ Examples:
 <timesheet> status 12345 --json
 <timesheet> invoice list --status pending --json
 <timesheet> invoice preview 901 --json
+<timesheet> upgrade --json
 ```
 
 Summarize the result in the format the user requested. Preserve entry IDs because they are needed for status checks, updates, and deletion.
 
 Invoice operations are read-only. Preserve process IDs because they connect the list and preview commands. The list returns normalized `pending` or `sent` status values and supports `--limit`, `--offset`, `--search`, `--status`, and `--all`. The preview returns the customer/project breakdown and monetized/non-monetized hours and amounts for one process. This CLI intentionally does not upload, open, or download invoice files.
+
+## CLI upgrade workflow
+
+Run `<timesheet> upgrade --json` only when the user explicitly asks to upgrade the installed CLI. `upgrade` retrieves the latest GitHub release, verifies the platform archive against `checksums.txt`, and replaces the current executable. Keep `<timesheet> update ID ...` exclusively for editing a timesheet entry.
+
+For a private repository, use an already configured `GH_TOKEN` or `GITHUB_TOKEN`; never ask the user to paste a token into the conversation. If the executable directory is not writable, report the exact error and recommend rerunning the installer with a writable `INSTALL_DIR` or using the required operating-system permissions. Read `data.updated`, `data.currentVersion`, `data.latestVersion`, and `data.executable` from the JSON response. An `updated: false` result means the latest release was already installed and is successful, not an error.
 
 ## Create workflow
 

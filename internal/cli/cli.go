@@ -79,7 +79,7 @@ func (a *app) rootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&a.json, "json", false, "emit machine-readable JSON")
 	root.AddCommand(
 		a.loginCommand(), a.logoutCommand(), a.listCommand(), a.metaCommand(), a.statusCommand(),
-		a.addCommand(), a.updateCommand(), a.deleteCommand(), a.invoiceCommand(), a.versionCommand(),
+		a.addCommand(), a.updateCommand(), a.deleteCommand(), a.invoiceCommand(), a.upgradeCommand(), a.versionCommand(),
 	)
 	return root
 }

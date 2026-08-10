@@ -44,6 +44,18 @@ timesheet --version
 timesheet --help
 ```
 
+## Upgrading
+
+Upgrade the installed executable to the latest GitHub release:
+
+```sh
+timesheet upgrade
+```
+
+The command downloads the archive for the current operating system and architecture, verifies it against the release's `checksums.txt`, and replaces the running executable. If the repository is private, export `GH_TOKEN` or `GITHUB_TOKEN` with read-only Contents access before running it. The executable's directory must be writable; otherwise, rerun the installer with a writable `INSTALL_DIR` or execute the update with the required operating-system permissions.
+
+Use `--json` to receive the current version, latest version, update status, and executable path in a structured response.
+
 ## Authentication
 
 Authenticate interactively before using the other commands:
@@ -100,6 +112,7 @@ timesheet add --customer CUSTOMER --project PROJECT --category CATEGORY \
   [--date DATE] --start HH:mm --end HH:mm --desc DESCRIPTION [--not-monetize]
 timesheet update ENTRY_ID [entry flags] [--monetize | --not-monetize]
 timesheet delete ENTRY_ID [--yes]
+timesheet upgrade
 timesheet version
 ```
 
@@ -116,6 +129,7 @@ timesheet status 12345
 timesheet invoice list --status pending
 timesheet invoice list --search "developer name" --limit 10
 timesheet invoice preview 901 --json
+timesheet upgrade --json
 
 timesheet add \
   --customer ernst \
@@ -130,7 +144,7 @@ timesheet update 12345 --end 18:00 --monetize
 timesheet delete 12345
 ```
 
-`delete` asks for confirmation unless `--yes` is supplied. On update, `--monetize` and `--not-monetize` explicitly set the value; omitting both preserves the current value.
+`delete` asks for confirmation unless `--yes` is supplied. `timesheet update ENTRY_ID` updates a timesheet entry, while `timesheet upgrade` upgrades the CLI itself. For entry updates, `--monetize` and `--not-monetize` explicitly set the value; omitting both preserves the current value.
 
 ## JSON output
 
@@ -152,7 +166,7 @@ Failures return an envelope on stderr and exit nonzero:
 {"ok":false,"error":{"code":"invalid_input","message":"..."}}
 ```
 
-Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`, `credential_store_error`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, and `internal_error`. Stable warning codes are `credential_store_unavailable` and `session_persist_failed`.
+Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`, `credential_store_error`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, `upgrade_failed`, and `internal_error`. Stable warning codes are `credential_store_unavailable` and `session_persist_failed`.
 
 Read-command data shapes:
 
@@ -161,6 +175,7 @@ Read-command data shapes:
 - `status`: `entryId`, normalized `state`, `manager`, and `created`
 - `invoice list`: normalized `invoices` plus `offset`, `returned`, `total`, and `filtered`
 - `invoice preview`: `processId` and project-level `items` with monetized/non-monetized hours and amounts
+- `upgrade`: `currentVersion`, `latestVersion`, `updated`, and `executable`
 
 Write commands return the action and normalized entry data; delete returns the entry ID and whether deletion occurred.
 
@@ -175,6 +190,8 @@ Invoice commands are read-only. Invoice status is normalized to `pending` or `se
 | `TIMESHEET_SESSION` | Session file location | `~/.timesheet-cli/session.json` |
 | `TIMESHEET_CREDENTIALS` | File credential store location | `~/.timesheet-cli/credentials.json` |
 | `TIMESHEET_BASE_URL` | Timesheet server URL | `https://luby-timesheet.azurewebsites.net` |
+| `GH_TOKEN` | GitHub token used by CLI upgrade | `GITHUB_TOKEN`, then unauthenticated |
+| `GITHUB_TOKEN` | Fallback GitHub token used by CLI upgrade | Unauthenticated |
 
 The session and credentials files contain authentication secrets. Do not print, share, or commit them. Credentials saved with `--save-credentials` are scoped to the configured server origin; the `system` store uses the operating system vault, while the explicitly selected `file` store relies on file ownership and mode `0600`.
 
