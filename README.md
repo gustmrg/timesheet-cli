@@ -125,16 +125,3 @@ Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`
 
 The session and credentials files contain authentication secrets. Do not print, share, or commit them.
 
-## Development
-
-Requirements: Go 1.26 or later.
-
-```sh
-go test -race ./...
-go vet ./...
-go build ./...
-```
-
-The test suite uses local HTTP servers and synthetic HTML fixtures. It never contacts the live timesheet service or reads local sessions and captures.
-
-Version tags matching `v*` trigger GitHub Actions to publish statically linked archives for Linux, macOS, and Windows on `amd64` and `arm64`, together with checksums and Sigstore provenance.

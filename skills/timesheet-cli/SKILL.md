@@ -35,6 +35,16 @@ The CLI stores session cookies at `~/.timesheet-cli/session.json` by default. `T
 - Read commands can automatically reauthenticate and retry once when saved credentials are available. Write commands are never automatically retried.
 - If authentication is missing and automatic renewal is unavailable, ask the user to run `<timesheet> login` in an interactive terminal. Mention `--save-credentials` only when they want future automatic reauthentication.
 
+## First-time login
+
+When the user has never authenticated — no session file and no saved credentials — guide them through a one-time interactive login. Do not collect or relay credentials yourself; the password prompt only accepts TTY input, and credentials must never pass through the conversation, flags, or environment variables.
+
+1. Ask the user to run `<timesheet> login --save-credentials` in their own terminal and follow the two prompts. If the chat harness lets the user run commands inline (for example, a `!` prefix), suggest that so they never leave the conversation.
+2. Explain that `--save-credentials` stores the credentials in the operating system vault (macOS Keychain, Windows Credential Manager, or Linux Secret Service), so the CLI reauthenticates automatically from then on and they should never need to log in again unless they change their password or log out.
+3. Once the user confirms login succeeded, verify access with a lightweight read such as `<timesheet> meta --json` before continuing with the original request.
+
+If the user has no interactive terminal at all, explain that interactive login is the only supported bootstrap and point them to the headless `--credential-store file` option only with their informed approval, as described above.
+
 ## Choose the command
 
 | User intent | Command |
