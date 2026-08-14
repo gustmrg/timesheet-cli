@@ -3,8 +3,7 @@ set -eu
 
 REPOSITORY="gustmrg/timesheet-cli"
 BINARY="timesheet"
-VERSION="${VERSION:-latest}"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="/usr/local/bin"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 API_ROOT="https://api.github.com/repos/$REPOSITORY"
 
@@ -45,22 +44,10 @@ release_json="$tmp_dir/release.json"
 auth_hint=""
 [ -n "$TOKEN" ] || auth_hint="; set GH_TOKEN if the repository is private"
 
-if [ "$VERSION" = "latest" ]; then
-  release_endpoint="$API_ROOT/releases/latest"
-else
-  VERSION=${VERSION#v}
-  release_endpoint="$API_ROOT/releases/tags/v$VERSION"
-fi
+api_request "application/vnd.github+json" -o "$release_json" "$API_ROOT/releases/latest" || fail "could not retrieve release metadata$auth_hint"
 
-api_request "application/vnd.github+json" -o "$release_json" "$release_endpoint" || fail "could not retrieve release metadata$auth_hint"
-
-if [ "$VERSION" = "latest" ]; then
-  VERSION=$(awk -F '"' '/"tag_name":/ { tag=$4; sub(/^v/, "", tag); print tag; exit }' "$release_json")
-  [ -n "$VERSION" ] || fail "could not determine the latest release version"
-fi
-case "$VERSION" in
-  *[!0-9A-Za-z._-]*) fail "invalid release version: $VERSION" ;;
-esac
+VERSION=$(awk -F '"' '/"tag_name":/ { tag=$4; sub(/^v/, "", tag); print tag; exit }' "$release_json")
+[ -n "$VERSION" ] || fail "could not determine the latest release version"
 
 asset_id() {
   awk -v file="$1" '
@@ -113,7 +100,7 @@ if [ ! -w "$INSTALL_DIR" ]; then
     printf 'Installing to %s (sudo required)...\n' "$INSTALL_DIR"
     sudo install -m 0755 "$tmp_dir/$BINARY" "$INSTALL_DIR/$BINARY"
   else
-    fail "$INSTALL_DIR is not writable and sudo is unavailable; set INSTALL_DIR to a writable directory"
+    fail "$INSTALL_DIR is not writable and sudo is unavailable"
   fi
 else
   install -m 0755 "$tmp_dir/$BINARY" "$INSTALL_DIR/$BINARY"
@@ -124,3 +111,21 @@ case ":${PATH}:" in
   *:"$INSTALL_DIR":*) ;;
   *) printf 'warning: %s is not on PATH\n' "$INSTALL_DIR" >&2 ;;
 esac
+
+if [ -r /dev/tty ]; then
+  printf 'Install the timesheet-cli agent skill to ~/.agents/skills and ~/.claude/skills? [y/N] '
+  read -r answer < /dev/tty || answer=""
+  case "$answer" in
+    y|Y|yes|YES)
+      skill_url="https://raw.githubusercontent.com/$REPOSITORY/v$VERSION/skills/timesheet-cli/SKILL.md"
+      for base in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
+        dest="$base/timesheet-cli"
+        if mkdir -p "$dest" && curl -fsSL -o "$dest/SKILL.md" "$skill_url"; then
+          printf 'Installed skill to %s\n' "$dest/SKILL.md"
+        else
+          printf 'warning: could not install skill to %s\n' "$dest" >&2
+        fi
+      done
+      ;;
+  esac
+fi

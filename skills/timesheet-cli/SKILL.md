@@ -114,7 +114,7 @@ Invoice operations are read-only. Preserve process IDs because they connect the 
 
 Run `<timesheet> upgrade --json` only when the user explicitly asks to upgrade the installed CLI. `upgrade` retrieves the latest GitHub release, verifies the platform archive against `checksums.txt`, and replaces the current executable. Keep `<timesheet> update ID ...` exclusively for editing a timesheet entry.
 
-For a private repository, use an already configured `GH_TOKEN` or `GITHUB_TOKEN`; never ask the user to paste a token into the conversation. If the executable directory is not writable, report the exact error and recommend rerunning the installer with a writable `INSTALL_DIR` or using the required operating-system permissions. Read `data.updated`, `data.currentVersion`, `data.latestVersion`, and `data.executable` from the JSON response. An `updated: false` result means the latest release was already installed and is successful, not an error.
+If the executable directory is not writable, report the exact error and recommend rerunning the upgrade with the required operating-system permissions. Read `data.updated`, `data.currentVersion`, `data.latestVersion`, and `data.executable` from the JSON response. An `updated: false` result means the latest release was already installed and is successful, not an error.
 
 ## Create workflow
 
