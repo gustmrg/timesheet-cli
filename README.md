@@ -69,6 +69,7 @@ timesheet logout [--forget-credentials]
 timesheet list [--limit N] [--all]
 timesheet meta
 timesheet status ENTRY_ID
+timesheet show ENTRY_ID
 timesheet invoice list [--limit N] [--offset N] [--search TEXT] [--status pending|sent] [--all]
 timesheet invoice preview PROCESS_ID
 timesheet add --customer CUSTOMER --project PROJECT --category CATEGORY \

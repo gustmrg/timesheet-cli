@@ -273,6 +273,54 @@ func (a *app) statusCommand() *cobra.Command {
 	}}
 }
 
+func (a *app) showCommand() *cobra.Command {
+	return &cobra.Command{Use: "show <entry-id>", Short: "Show a timesheet entry including its description", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		id, err := positiveID(args[0])
+		if err != nil {
+			return err
+		}
+		client, clientErr := a.client()
+		if clientErr != nil {
+			return clientErr
+		}
+		entries, apiErr := client.ListEntries()
+		if apiErr != nil {
+			return classifyAPI(apiErr)
+		}
+		var entry *webparse.Entry
+		for index := range entries {
+			if entries[index].ID == id {
+				entry = &entries[index]
+				break
+			}
+		}
+		if entry == nil {
+			return fail("not_found", fmt.Sprintf("entry %d not found", id), 5, nil)
+		}
+		if entry.EvaluateID == nil {
+			return fail("not_found", fmt.Sprintf("entry %d has no evaluation", id), 5, nil)
+		}
+		evaluation, apiErr := client.Evaluate(id, *entry.EvaluateID)
+		if apiErr != nil {
+			return classifyAPI(apiErr)
+		}
+		description := evaluation.Description
+		if text, textErr := webparse.FragmentText(description); textErr == nil {
+			description = text
+		}
+		data := map[string]any{
+			"entryId": id, "date": entry.Date, "start": entry.Start, "end": entry.End, "total": entry.Total,
+			"customer": entry.Customer, "project": entry.Project, "category": entry.Category,
+			"status": entry.Status, "description": description,
+		}
+		return a.success(data, func() {
+			fmt.Fprintf(a.out, "entry %d (%s %s–%s, %s)\n", id, entry.Date, entry.Start, entry.End, entry.Project)
+			fmt.Fprintf(a.out, "customer: %s\ncategory: %s\ntotal:    %s\nstatus:   %s\n", entry.Customer, entry.Category, entry.Total, entry.Status)
+			fmt.Fprintf(a.out, "description:\n%s\n", description)
+		})
+	}}
+}
+
 func (a *app) addCommand() *cobra.Command {
 	var flags entryFlags
 	cmd := &cobra.Command{Use: "add", Short: "Create a timesheet entry", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {

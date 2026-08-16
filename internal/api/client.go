@@ -117,6 +117,7 @@ type WorksheetRecord struct {
 type EvaluateInfo struct {
 	ManagerName   *string `json:"ManagerName"`
 	Created       *string `json:"Created"`
+	Description   string  `json:"Description"`
 	IsWait        string  `json:"IsWait"`
 	IsApprove     string  `json:"IsApprove"`
 	IsReprove     string  `json:"IsReprove"`

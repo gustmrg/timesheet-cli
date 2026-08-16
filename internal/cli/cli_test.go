@@ -95,6 +95,7 @@ func TestValidationErrorsUseStableJSONCodesAndStderr(t *testing.T) {
 	for _, args := range [][]string{
 		{"list", "--limit", "0", "--json"},
 		{"status", "not-an-id", "--json"},
+		{"show", "not-an-id", "--json"},
 		{"add", "--json"},
 		{"add", "--customer", "10", "--project", "20", "--category", "30", "--date", "2026-02-30", "--start", "09:00", "--end", "10:00", "--desc", "x", "--json"},
 		{"update", "123", "--desc", "", "--json"},
@@ -118,6 +119,7 @@ func TestReadAndWriteCommandsExposeStableJSONData(t *testing.T) {
 	}{
 		{[]string{"meta", "--json"}, []string{`"customers"`, `"id":10`, `"id":20`, `"id":30`}},
 		{[]string{"status", "123", "--json"}, []string{`"state":"approved"`, `"manager":"Maria"`}},
+		{[]string{"show", "123", "--json"}, []string{`"entryId":123`, `"project":"Internal"`, `"description":"Old notes"`}},
 		{[]string{"add", "--customer", "acme", "--project", "internal", "--category", "daily", "--date", "2026-07-20", "--start", "09:00", "--end", "10:00", "--desc", "Work", "--json"}, []string{`"action":"created"`, `"id":777`}},
 		{[]string{"update", "123", "--monetize", "--end", "11:00", "--json"}, []string{`"action":"updated"`, `"notMonetized":false`}},
 		{[]string{"delete", "123", "--yes", "--json"}, []string{`"deleted":true`, `"id":123`}},
@@ -210,7 +212,7 @@ func newCLIServer(t *testing.T) *httptest.Server {
 		case "/Worksheet/Update":
 			writeCLIJSON(w, map[string]any{"Id": 123, "IdCustomer": 10, "IdProject": 20, "IdCategory": 30, "InformedDate": "20/07/2026", "StartTime": "09:00", "EndTime": "10:00", "Description": "<p>Old</p>", "NotMonetize": true})
 		case "/Worksheet/ReadEvaluate":
-			writeCLIJSON(w, map[string]any{"ManagerName": "Maria", "Created": "20/07/2026", "IsApprove": "1"})
+			writeCLIJSON(w, map[string]any{"ManagerName": "Maria", "Created": "20/07/2026", "IsApprove": "1", "Description": "<p>Old notes</p>"})
 		case "/Worksheet/UpdateMultiple":
 			writeCLIJSON(w, map[string]any{"success": true, "createdWorksheets": []map[string]any{{"Id": 777}}})
 		case "/Worksheet/UpdateOne", "/Worksheet/Delete":

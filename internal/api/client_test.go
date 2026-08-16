@@ -360,7 +360,7 @@ func TestWorksheetEndpointsPreserveTheirWireContracts(t *testing.T) {
 			if r.Method != http.MethodPost || r.FormValue("idworksheet") != "123" || r.FormValue("idevaluate") != "456" {
 				t.Errorf("unexpected evaluate request")
 			}
-			writeJSON(w, map[string]any{"ManagerName": "Maria", "IsApprove": "1"})
+			writeJSON(w, map[string]any{"ManagerName": "Maria", "IsApprove": "1", "Description": "<p>Old</p>"})
 		case "/Worksheet/UpdateMultiple":
 			body, _ := io.ReadAll(r.Body)
 			if !strings.Contains(string(body), `"Description":"<p>&lt;b&gt;safe&lt;/b&gt;<br>next</p>"`) {
@@ -398,8 +398,12 @@ func TestWorksheetEndpointsPreserveTheirWireContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Evaluate(123, 456); err != nil {
+	evaluation, err := client.Evaluate(123, 456)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if evaluation.Description != "<p>Old</p>" {
+		t.Errorf("Evaluate().Description = %q", evaluation.Description)
 	}
 	input := api.EntryInput{Customer: api.Ref{ID: 10, Name: "ACME"}, Project: api.Ref{ID: 20, Name: "Internal"}, Category: api.Ref{ID: 30, Name: "Daily"}, Date: "20/07/2026", Start: "09:00", End: "10:00", Description: "<b>safe</b>\nnext"}
 	created, err := client.Create(input)
