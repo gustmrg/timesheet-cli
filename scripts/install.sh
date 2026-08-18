@@ -113,19 +113,31 @@ case ":${PATH}:" in
 esac
 
 if [ -r /dev/tty ]; then
-  printf 'Install the timesheet-cli agent skill to ~/.agents/skills and ~/.claude/skills? [y/N] '
+  skill_url="https://raw.githubusercontent.com/$REPOSITORY/v$VERSION/skills/timesheet-cli/SKILL.md"
+
+  printf 'Install the timesheet-cli agent skill globally to ~/.agents/skills? [y/N] '
   read -r answer < /dev/tty || answer=""
   case "$answer" in
     y|Y|yes|YES)
-      skill_url="https://raw.githubusercontent.com/$REPOSITORY/v$VERSION/skills/timesheet-cli/SKILL.md"
-      for base in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
-        dest="$base/timesheet-cli"
-        if mkdir -p "$dest" && curl -fsSL -o "$dest/SKILL.md" "$skill_url"; then
-          printf 'Installed skill to %s\n' "$dest/SKILL.md"
-        else
-          printf 'warning: could not install skill to %s\n' "$dest" >&2
-        fi
-      done
+      dest="$HOME/.agents/skills/timesheet-cli"
+      if mkdir -p "$dest" && curl -fsSL -o "$dest/SKILL.md" "$skill_url"; then
+        printf 'Installed skill to %s\n' "$dest/SKILL.md"
+      else
+        printf 'warning: could not install skill to %s\n' "$dest" >&2
+      fi
+      ;;
+  esac
+
+  printf 'Install the timesheet-cli agent skill for Claude to ~/.claude/skills? [y/N] '
+  read -r answer < /dev/tty || answer=""
+  case "$answer" in
+    y|Y|yes|YES)
+      dest="$HOME/.claude/skills/timesheet-cli"
+      if mkdir -p "$dest" && curl -fsSL -o "$dest/SKILL.md" "$skill_url"; then
+        printf 'Installed skill to %s\n' "$dest/SKILL.md"
+      else
+        printf 'warning: could not install skill to %s\n' "$dest" >&2
+      fi
       ;;
   esac
 fi

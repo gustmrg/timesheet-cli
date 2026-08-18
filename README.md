@@ -16,7 +16,7 @@ The script detects your operating system and architecture and verifies the relea
 irm https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.ps1 | iex
 ```
 
-Both installers end with an optional prompt to install the bundled agent skill (`skills/timesheet-cli/SKILL.md`) into `~/.agents/skills` and `~/.claude/skills`; answer `y` to install it or press Enter to skip.
+Both installers end with separate optional prompts for the bundled agent skill (`skills/timesheet-cli/SKILL.md`): one for the global agents directory (`~/.agents/skills`) and another for Claude (`~/.claude/skills`). Answer `y` to either prompt to install it in that location or press Enter to skip.
 
 Verify the installation:
 

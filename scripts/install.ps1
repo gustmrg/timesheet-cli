@@ -56,24 +56,41 @@ try {
 
     Write-Host "Installed timesheet v$Version to $(Join-Path $InstallDir $Binary)"
 
+    $SkillUrl = "https://raw.githubusercontent.com/$Repository/v$Version/skills/timesheet-cli/SKILL.md"
+
     try {
-        $Answer = Read-Host 'Install the timesheet-cli agent skill to ~/.agents/skills and ~/.claude/skills? [y/N]'
+        $AgentsAnswer = Read-Host 'Install the timesheet-cli agent skill globally to ~/.agents/skills? [y/N]'
     }
     catch {
-        $Answer = ''
+        $AgentsAnswer = ''
     }
-    if ($Answer -match '^(y|yes)$') {
-        $SkillUrl = "https://raw.githubusercontent.com/$Repository/v$Version/skills/timesheet-cli/SKILL.md"
-        foreach ($Base in @((Join-Path $HOME '.agents\skills'), (Join-Path $HOME '.claude\skills'))) {
-            $Dest = Join-Path $Base 'timesheet-cli'
-            try {
-                New-Item -ItemType Directory -Path $Dest -Force | Out-Null
-                Invoke-WebRequest -Uri $SkillUrl -OutFile (Join-Path $Dest 'SKILL.md')
-                Write-Host "Installed skill to $(Join-Path $Dest 'SKILL.md')"
-            }
-            catch {
-                Write-Warning "could not install skill to $Dest"
-            }
+    if ($AgentsAnswer -match '^(y|yes)$') {
+        $Dest = Join-Path $HOME '.agents\skills\timesheet-cli'
+        try {
+            New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+            Invoke-WebRequest -Uri $SkillUrl -OutFile (Join-Path $Dest 'SKILL.md')
+            Write-Host "Installed skill to $(Join-Path $Dest 'SKILL.md')"
+        }
+        catch {
+            Write-Warning "could not install skill to $Dest"
+        }
+    }
+
+    try {
+        $ClaudeAnswer = Read-Host 'Install the timesheet-cli agent skill for Claude to ~/.claude/skills? [y/N]'
+    }
+    catch {
+        $ClaudeAnswer = ''
+    }
+    if ($ClaudeAnswer -match '^(y|yes)$') {
+        $Dest = Join-Path $HOME '.claude\skills\timesheet-cli'
+        try {
+            New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+            Invoke-WebRequest -Uri $SkillUrl -OutFile (Join-Path $Dest 'SKILL.md')
+            Write-Host "Installed skill to $(Join-Path $Dest 'SKILL.md')"
+        }
+        catch {
+            Write-Warning "could not install skill to $Dest"
         }
     }
 }
