@@ -167,6 +167,37 @@ func (a *app) uninstallMCPService() (mcpServiceRemoval, error) {
 	return mcpServiceRemoval{Removed: true, Unit: unitPath}, nil
 }
 
+// restartMCPServiceAfterUpgrade restarts the MCP service so it runs the new
+// executable. It returns nil when no service is installed for this user. The
+// upgrade already succeeded, so failures become warnings.
+func (a *app) restartMCPServiceAfterUpgrade() *bool {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" && os.Geteuid() == 0 {
+		a.addWarning("service_not_restarted", fmt.Sprintf("upgraded with sudo, so the MCP service of %s was not checked; if it is installed, run `systemctl --user restart timesheet-mcp` as %s", sudoUser, sudoUser))
+		return nil
+	}
+	unitPath, err := mcpUnitPath()
+	if err != nil {
+		return nil
+	}
+	if _, err := os.Stat(unitPath); err != nil {
+		return nil
+	}
+	restarted := false
+	// A stopped service stays stopped; it loads the new executable on its next start.
+	if state, _ := a.systemCommandOutput("systemctl", "--user", "is-active", mcpServiceName); strings.TrimSpace(state) != "active" {
+		return &restarted
+	}
+	if err := a.runSystemCommand("systemctl", "--user", "restart", mcpServiceName); err != nil {
+		a.addWarning("service_not_restarted", "upgraded, but could not restart the MCP service; run `systemctl --user restart timesheet-mcp`: "+classify(err).message)
+		return &restarted
+	}
+	restarted = true
+	return &restarted
+}
+
 // lingerEnabled reports whether systemd keeps this user's services running
 // while they are logged out, adding a warning when it does not or cannot tell.
 func (a *app) lingerEnabled() bool {

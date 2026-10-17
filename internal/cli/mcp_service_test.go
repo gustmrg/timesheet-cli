@@ -13,6 +13,7 @@ import (
 type fakeSystem struct {
 	calls  []string
 	linger string
+	active string
 	fail   string
 }
 
@@ -24,6 +25,12 @@ func (f *fakeSystem) run(name string, args ...string) (string, error) {
 	}
 	if name == "loginctl" {
 		return f.linger + "\n", nil
+	}
+	if len(args) > 1 && args[1] == "is-active" {
+		if f.active != "active" {
+			return f.active + "\n", errors.New("exit status 3")
+		}
+		return "active\n", nil
 	}
 	return "", nil
 }
@@ -186,5 +193,40 @@ func TestSystemdQuoteEscapesSpecialCharacters(t *testing.T) {
 		if got := systemdQuote(input); got != want {
 			t.Errorf("systemdQuote(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestUpgradeRestartsOnlyARunningMCPService(t *testing.T) {
+	t.Setenv("SUDO_USER", "")
+	system := &fakeSystem{linger: "yes", active: "active"}
+	a, _, _ := newServiceTestApp(t, system)
+	if restarted := a.restartMCPServiceAfterUpgrade(); restarted != nil || len(system.calls) != 0 {
+		t.Fatalf("without a unit = %v, calls %q", restarted, system.calls)
+	}
+
+	if _, err := a.installMCPService(mcpDefaultAddress, "", false); err != nil {
+		t.Fatal(err)
+	}
+	system.calls = nil
+	if restarted := a.restartMCPServiceAfterUpgrade(); restarted == nil || !*restarted {
+		t.Fatalf("running service restarted = %v", restarted)
+	}
+	want := "systemctl --user is-active " + mcpServiceName + "\nsystemctl --user restart " + mcpServiceName
+	if strings.Join(system.calls, "\n") != want {
+		t.Errorf("calls = %q", system.calls)
+	}
+
+	system.calls, system.active = nil, "inactive"
+	if restarted := a.restartMCPServiceAfterUpgrade(); restarted == nil || *restarted || len(system.calls) != 1 {
+		t.Errorf("stopped service = %v, calls %q", restarted, system.calls)
+	}
+
+	system.calls, system.active, system.fail = nil, "active", "restart"
+	a.warnings = nil
+	if restarted := a.restartMCPServiceAfterUpgrade(); restarted == nil || *restarted {
+		t.Errorf("failed restart = %v", restarted)
+	}
+	if warnings := a.collectWarnings(); len(warnings) != 1 || warnings[0].Code != "service_not_restarted" {
+		t.Errorf("warnings = %+v", warnings)
 	}
 }

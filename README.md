@@ -31,7 +31,7 @@ timesheet --help
 timesheet upgrade
 ```
 
-This downloads the latest release for your platform, verifies its checksum, and replaces the running executable.
+This downloads the latest release for your platform, verifies its checksum, and replaces the running executable. On Linux it also restarts the [MCP service](#running-it-as-a-service-on-linux) when it is running.
 
 ## Getting started
 
@@ -161,7 +161,7 @@ loginctl enable-linger "$USER"        # keep it running while you are logged out
 
 `install` writes `~/.config/systemd/user/timesheet-mcp.service` pointing at the running executable, creates the token file if needed, and enables and starts the service, which then starts again at login and after a crash. Running it again replaces the service and restarts it. `TIMESHEET_BASE_URL`, `TIMESHEET_SESSION`, and `TIMESHEET_CREDENTIALS` are copied into the service when set; the service always reads its token from the file, never from `TIMESHEET_MCP_TOKEN`. The command warns when lingering is off, because systemd then stops the service when your last session ends.
 
-Use the file credential store on a server: the operating system vault is usually locked or absent while you are logged out, so the service could not renew its session. After `timesheet upgrade`, run `systemctl --user restart timesheet-mcp` to load the new version. Inspect the service with `systemctl --user status timesheet-mcp` and `journalctl --user -u timesheet-mcp`, and remove it with `timesheet mcp uninstall`, which keeps the token file, session, and credentials.
+Use the file credential store on a server: the operating system vault is usually locked or absent while you are logged out, so the service could not renew its session. `timesheet upgrade` restarts the service when it is running, so it loads the new version; under `sudo`, restart it yourself with `systemctl --user restart timesheet-mcp`. Inspect the service with `systemctl --user status timesheet-mcp` and `journalctl --user -u timesheet-mcp`, and remove it with `timesheet mcp uninstall`, which keeps the token file, session, and credentials.
 
 The service is Linux only. On macOS or Windows, run `timesheet mcp --http ADDRESS` under launchd, Task Scheduler, or another service manager.
 
