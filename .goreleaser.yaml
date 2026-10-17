@@ -53,3 +53,8 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+
+release:
+  # Versions such as 0.9.0-rc.1 become GitHub prereleases, which the installers
+  # and `timesheet upgrade` skip because they follow the latest release.
+  prerelease: auto
