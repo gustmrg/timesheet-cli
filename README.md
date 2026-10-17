@@ -1,41 +1,41 @@
 # timesheet-cli
 
-A cross-platform command-line client for managing entries and inspecting invoices in [Luby](https://github.com/lubysoftware) Timesheet. It authenticates directly against the site's HTTP endpoints; no browser or language runtime is needed after installation.
+Cliente de linha de comando multiplataforma para gerenciar lançamentos e consultar faturas no Timesheet da [Luby](https://github.com/lubysoftware). Ele se autentica diretamente nos endpoints HTTP do site; depois da instalação, não precisa de navegador nem de runtime de linguagem.
 
-## Installation
+## Instalação
 
-On macOS or Linux, install the latest release to `/usr/local/bin` with:
+No macOS ou no Linux, instale a release mais recente em `/usr/local/bin` com:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.sh | sh
 ```
 
-The script detects your operating system and architecture and verifies the release checksum. On Windows, run the PowerShell installer instead; it installs to `%LOCALAPPDATA%\Programs\timesheet` and adds it to your user `PATH`:
+O script detecta o sistema operacional e a arquitetura e verifica o checksum da release. No Windows, use o instalador em PowerShell; ele instala em `%LOCALAPPDATA%\Programs\timesheet` e adiciona a pasta ao `PATH` do seu usuário:
 
 ```powershell
 irm https://raw.githubusercontent.com/gustmrg/timesheet-cli/main/scripts/install.ps1 | iex
 ```
 
-Both installers end with separate optional prompts for the bundled agent skill (`skills/timesheet-cli/SKILL.md`): one for the global agents directory (`~/.agents/skills`) and another for Claude (`~/.claude/skills`). Answer `y` to either prompt to install it in that location or press Enter to skip.
+Os dois instaladores terminam com perguntas opcionais e separadas sobre a skill de agente incluída (`skills/timesheet-cli/SKILL.md`): uma para o diretório global de agentes (`~/.agents/skills`) e outra para o Claude (`~/.claude/skills`). Responda `y` para instalar a skill naquele local ou pressione Enter para pular.
 
-Verify the installation:
+Verifique a instalação:
 
 ```sh
 timesheet --version
 timesheet --help
 ```
 
-## Upgrading
+## Atualização
 
 ```sh
 timesheet upgrade
 ```
 
-This downloads the latest release for your platform, verifies its checksum, and replaces the running executable.
+O comando baixa a release mais recente para a sua plataforma, verifica o checksum e substitui o executável em uso. No Linux, ele também reinicia o [serviço MCP](#rodando-como-serviço-no-linux) se ele estiver em execução.
 
-## Getting started
+## Primeiros passos
 
-Log in once, then manage your entries:
+Faça login uma vez e depois gerencie seus lançamentos:
 
 ```sh
 timesheet login
@@ -46,48 +46,48 @@ timesheet add \
   --category daily \
   --start 09:00 \
   --end 10:00 \
-  --desc "Daily meeting"
+  --desc "Reunião diária."
 
 timesheet list
 ```
 
-The session is stored at `~/.timesheet-cli/session.json`. To let the CLI reauthenticate after the server expires a session, save your credentials in the operating system's credential vault:
+A sessão fica em `~/.timesheet-cli/session.json`. Para que a CLI se autentique de novo quando o servidor expirar a sessão, salve suas credenciais no cofre de credenciais do sistema operacional:
 
 ```sh
 timesheet login --save-credentials
-timesheet logout                  # keep saved credentials
+timesheet logout                  # mantém as credenciais salvas
 timesheet logout --forget-credentials
 ```
 
-This uses macOS Keychain, Windows Credential Manager, or the Secret Service API on Linux. On a headless Linux system without Secret Service, use `timesheet login --save-credentials --credential-store file` instead; credentials are then kept in `~/.timesheet-cli/credentials.json` with mode `0600`.
+Isso usa o Keychain no macOS, o Gerenciador de Credenciais no Windows ou a API Secret Service no Linux. Em um Linux sem interface gráfica e sem Secret Service, use `timesheet login --save-credentials --credential-store file`; as credenciais ficam então em `~/.timesheet-cli/credentials.json`, com permissão `0600`.
 
-## Commands
+## Comandos
 
 ```text
-timesheet login [--user LOGIN] [--pass PASSWORD] [--save-credentials] [--credential-store system|file]
+timesheet login [--user LOGIN] [--pass SENHA] [--save-credentials] [--credential-store system|file]
 timesheet logout [--forget-credentials]
 timesheet list [--limit N] [--all]
 timesheet meta
-timesheet status ENTRY_ID
-timesheet show ENTRY_ID
-timesheet invoice list [--limit N] [--offset N] [--search TEXT] [--status pending|sent] [--all]
-timesheet invoice preview PROCESS_ID
-timesheet add --customer CUSTOMER --project PROJECT --category CATEGORY \
-  [--date DATE] --start HH:mm --end HH:mm --desc DESCRIPTION [--not-monetize]
-timesheet update ENTRY_ID [entry flags] [--monetize | --not-monetize]
-timesheet delete ENTRY_ID [--yes]
-timesheet mcp [--http ADDRESS] [--token-file PATH]
-timesheet mcp install [--http ADDRESS] [--token-file PATH]
+timesheet status ID_DO_LANÇAMENTO
+timesheet show ID_DO_LANÇAMENTO
+timesheet invoice list [--limit N] [--offset N] [--search TEXTO] [--status pending|sent] [--all]
+timesheet invoice preview ID_DO_PROCESSO
+timesheet add --customer CLIENTE --project PROJETO --category CATEGORIA \
+  [--date DATA] --start HH:mm --end HH:mm --desc DESCRIÇÃO [--not-monetize]
+timesheet update ID_DO_LANÇAMENTO [flags do lançamento] [--monetize | --not-monetize]
+timesheet delete ID_DO_LANÇAMENTO [--yes]
+timesheet mcp [--http ENDEREÇO] [--token-file CAMINHO]
+timesheet mcp install [--http ENDEREÇO] [--token-file CAMINHO]
 timesheet mcp uninstall
 timesheet upgrade
 timesheet version
 ```
 
-Every command supports `-h`/`--help`. `--json` is a global flag and may appear before or after a subcommand.
+Todos os comandos aceitam `-h`/`--help`. `--json` é uma flag global e pode vir antes ou depois do subcomando.
 
-Customer, project, and category values accept a numeric ID or a unique, case-insensitive name substring. Dates accept `YYYY-MM-DD` or `dd/MM/yyyy` and default to today. Times use 24-hour `HH:mm` format.
+Cliente, projeto e categoria aceitam um ID numérico ou um trecho único do nome, sem diferenciar maiúsculas de minúsculas. Datas aceitam `YYYY-MM-DD` ou `dd/MM/yyyy` e, se omitidas, assumem o dia de hoje. Horários usam o formato 24 horas `HH:mm`.
 
-Examples:
+Exemplos:
 
 ```sh
 timesheet list --limit 5
@@ -99,29 +99,29 @@ timesheet update 12345 --end 18:00 --monetize
 timesheet delete 12345 --yes
 ```
 
-`delete` asks for confirmation unless `--yes` is supplied. `timesheet update ENTRY_ID` updates a timesheet entry, while `timesheet upgrade` upgrades the CLI itself.
+`delete` pede confirmação, a menos que `--yes` seja informado. `timesheet update ID_DO_LANÇAMENTO` altera um lançamento, enquanto `timesheet upgrade` atualiza a própria CLI.
 
-## JSON output
+## Saída JSON
 
-With `--json`, successful commands print an envelope on stdout:
+Com `--json`, os comandos bem-sucedidos imprimem um envelope no stdout:
 
 ```json
 {"ok":true,"data":{}}
 ```
 
-Failures print an envelope on stderr and exit nonzero:
+As falhas imprimem um envelope no stderr e terminam com código diferente de zero:
 
 ```json
 {"ok":false,"error":{"code":"invalid_input","message":"..."}}
 ```
 
-Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`, `credential_store_error`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, `upgrade_failed`, and `internal_error`.
+Os códigos de erro estáveis são `usage`, `invalid_input`, `auth_required`, `login_failed`, `credential_store_error`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, `upgrade_failed` e `internal_error`.
 
-## MCP server
+## Servidor MCP
 
-`timesheet mcp` serves the CLI's operations to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io). The agent gets tools; the session and saved credentials stay with the CLI and never reach it.
+`timesheet mcp` oferece as operações da CLI a agentes de IA pelo [Model Context Protocol](https://modelcontextprotocol.io). O agente recebe ferramentas; a sessão e as credenciais salvas ficam com a CLI e nunca chegam até ele.
 
-| Tool | Equivalent command |
+| Ferramenta | Comando equivalente |
 | --- | --- |
 | `list_entries` | `timesheet list` |
 | `get_metadata` | `timesheet meta` |
@@ -133,58 +133,57 @@ Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`
 | `update_entry` | `timesheet update` |
 | `delete_entry` | `timesheet delete --yes` |
 
-Read tools are annotated read-only and the write tools destructive, so clients that ask before each call can allow reads and keep asking for writes. Results use the same envelope as `--json`. `upgrade`, `login`, and `logout` are not exposed. Log in once with `timesheet login --save-credentials` (add `--credential-store file` on a headless machine) so the server can renew its session.
+As ferramentas de leitura são marcadas como somente leitura e as de escrita como destrutivas, para que clientes que pedem aprovação a cada chamada possam liberar as leituras e continuar pedindo aprovação para as escritas. Os resultados usam o mesmo envelope do `--json`. `upgrade`, `login` e `logout` não são expostos. Faça login uma vez com `timesheet login --save-credentials` (adicione `--credential-store file` em uma máquina sem interface gráfica) para que o servidor consiga renovar a sessão.
 
-Without flags the server speaks MCP over stdin and stdout, for clients that launch it as a local process:
+Sem flags, o servidor fala MCP pelo stdin e stdout, para clientes que o iniciam como processo local:
 
 ```json
 { "mcpServers": { "timesheet": { "command": "timesheet", "args": ["mcp"] } } }
 ```
 
-With `--http` it serves Streamable HTTP at `/mcp`:
+Com `--http`, ele serve Streamable HTTP em `/mcp`:
 
 ```sh
 timesheet mcp --http 127.0.0.1:8765
 ```
 
-Every HTTP request must send `Authorization: Bearer <token>`. The token is read from `TIMESHEET_MCP_TOKEN`, or from `~/.timesheet-cli/mcp-token`, which is created with a random token (mode `0600`) on first start; `--token-file` names another file, which must already exist. Tokens must be at least 32 characters.
+Toda requisição HTTP precisa enviar `Authorization: Bearer <token>`. O token é lido de `TIMESHEET_MCP_TOKEN` ou de `~/.timesheet-cli/mcp-token`, que é criado com um token aleatório (permissão `0600`) na primeira execução; `--token-file` indica outro arquivo, que precisa já existir. O token deve ter pelo menos 32 caracteres.
 
-### Running it as a service on Linux
+### Rodando como serviço no Linux
 
-To keep the HTTP server running in the background, install it as a systemd user service:
+Para manter o servidor HTTP rodando em segundo plano, instale-o como serviço de usuário do systemd:
 
 ```sh
 timesheet login --save-credentials --credential-store file
-timesheet mcp install                 # listens on 127.0.0.1:8765; --http changes it
-loginctl enable-linger "$USER"        # keep it running while you are logged out
+timesheet mcp install                 # escuta em 127.0.0.1:8765; --http muda o endereço
+loginctl enable-linger "$USER"        # mantém o serviço rodando com você deslogado
 ```
 
-`install` writes `~/.config/systemd/user/timesheet-mcp.service` pointing at the running executable, creates the token file if needed, and enables and starts the service, which then starts again at login and after a crash. Running it again replaces the service and restarts it. `TIMESHEET_BASE_URL`, `TIMESHEET_SESSION`, and `TIMESHEET_CREDENTIALS` are copied into the service when set; the service always reads its token from the file, never from `TIMESHEET_MCP_TOKEN`. The command warns when lingering is off, because systemd then stops the service when your last session ends.
+O `install` grava `~/.config/systemd/user/timesheet-mcp.service` apontando para o executável em uso, cria o arquivo de token se necessário e habilita e inicia o serviço, que passa a subir de novo a cada login e depois de uma falha. Rodar o comando outra vez substitui o serviço e o reinicia. `TIMESHEET_BASE_URL`, `TIMESHEET_SESSION` e `TIMESHEET_CREDENTIALS` são copiadas para o serviço quando definidas; o serviço sempre lê o token do arquivo, nunca de `TIMESHEET_MCP_TOKEN`. O comando avisa quando o lingering está desligado, porque nesse caso o systemd para o serviço quando sua última sessão termina.
 
-Use the file credential store on a server: the operating system vault is usually locked or absent while you are logged out, so the service could not renew its session. After `timesheet upgrade`, run `systemctl --user restart timesheet-mcp` to load the new version. Inspect the service with `systemctl --user status timesheet-mcp` and `journalctl --user -u timesheet-mcp`, and remove it with `timesheet mcp uninstall`, which keeps the token file, session, and credentials.
+Em um servidor, use o armazenamento de credenciais em arquivo: o cofre do sistema operacional costuma ficar bloqueado ou indisponível enquanto você está deslogado, e o serviço não conseguiria renovar a sessão. O `timesheet upgrade` reinicia o serviço quando ele está rodando, para que carregue a nova versão; com `sudo`, reinicie você mesmo com `systemctl --user restart timesheet-mcp`. Acompanhe o serviço com `systemctl --user status timesheet-mcp` e `journalctl --user -u timesheet-mcp`, e remova-o com `timesheet mcp uninstall`, que mantém o arquivo de token, a sessão e as credenciais.
 
-The service is Linux only. On macOS or Windows, run `timesheet mcp --http ADDRESS` under launchd, Task Scheduler, or another service manager.
+O serviço funciona só no Linux. No macOS ou no Windows, rode `timesheet mcp --http ENDEREÇO` pelo launchd, pelo Agendador de Tarefas ou por outro gerenciador de serviços.
 
-### Connecting over HTTPS
+### Conectando por HTTPS
 
-Clients that require HTTPS, such as remote MCP servers in Wisp Bot, can reach it through a TLS reverse proxy. On a machine in a Tailscale tailnet:
+Clientes que exigem HTTPS, como os servidores MCP remotos do Wisp Bot, podem acessá-lo por um proxy reverso com TLS. Em uma máquina de uma tailnet do Tailscale:
 
 ```sh
 tailscale serve --bg --https=8443 http://127.0.0.1:8765
 ```
 
-Then add `https://<machine>.<tailnet>.ts.net:8443/mcp` as a remote MCP server with header authentication: header `Authorization`, value `Bearer <token>`.
+Depois, adicione `https://<máquina>.<tailnet>.ts.net:8443/mcp` como servidor MCP remoto com autenticação por header: header `Authorization`, valor `Bearer <token>`.
 
-## Configuration
+## Configuração
 
-| Variable | Purpose | Default |
+| Variável | Finalidade | Padrão |
 | --- | --- | --- |
-| `TIMESHEET_USER` | Login username | Interactive prompt |
-| `TIMESHEET_PASS` | Login password | Interactive prompt |
-| `TIMESHEET_SESSION` | Session file location | `~/.timesheet-cli/session.json` |
-| `TIMESHEET_CREDENTIALS` | File credential store location | `~/.timesheet-cli/credentials.json` |
-| `TIMESHEET_BASE_URL` | Timesheet server URL | `https://luby-timesheet.azurewebsites.net` |
-| `TIMESHEET_MCP_TOKEN` | Bearer token for `timesheet mcp --http` | `~/.timesheet-cli/mcp-token` |
+| `TIMESHEET_USER` | Usuário de login | Pergunta interativa |
+| `TIMESHEET_PASS` | Senha de login | Pergunta interativa |
+| `TIMESHEET_SESSION` | Local do arquivo de sessão | `~/.timesheet-cli/session.json` |
+| `TIMESHEET_CREDENTIALS` | Local do armazenamento de credenciais em arquivo | `~/.timesheet-cli/credentials.json` |
+| `TIMESHEET_BASE_URL` | URL do servidor do Timesheet | `https://luby-timesheet.azurewebsites.net` |
+| `TIMESHEET_MCP_TOKEN` | Token bearer do `timesheet mcp --http` | `~/.timesheet-cli/mcp-token` |
 
-The session, credentials, and MCP token files contain authentication secrets. Do not print, share, or commit them.
-
+Os arquivos de sessão, de credenciais e de token do MCP contêm segredos de autenticação. Não os imprima, compartilhe nem faça commit deles.

@@ -10,6 +10,13 @@ import (
 
 const defaultUpgradeAPIURL = "https://api.github.com/repos/gustmrg/timesheet-cli/releases/latest"
 
+// upgradeResult adds serviceRestarted, present only when the MCP service is
+// installed, to the updater's result.
+type upgradeResult struct {
+	updater.Result
+	ServiceRestarted *bool `json:"serviceRestarted,omitempty"`
+}
+
 func (a *app) upgradeCommand() *cobra.Command {
 	return &cobra.Command{Use: "upgrade", Short: "Upgrade the CLI to the latest release", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		executable, err := os.Executable()
@@ -29,10 +36,17 @@ func (a *app) upgradeCommand() *cobra.Command {
 		if err != nil {
 			return fail("upgrade_failed", err.Error(), 5, err)
 		}
-		return a.success(result, func() {
+		data := upgradeResult{Result: result}
+		if result.Updated {
+			data.ServiceRestarted = a.restartMCPServiceAfterUpgrade()
+		}
+		return a.success(data, func() {
 			if result.Updated {
 				fmt.Fprintf(a.out, "upgraded timesheet from v%s to v%s\n", result.CurrentVersion, result.LatestVersion)
 				fmt.Fprintf(a.out, "executable: %s\n", result.Executable)
+				if data.ServiceRestarted != nil && *data.ServiceRestarted {
+					fmt.Fprintf(a.out, "restarted %s\n", mcpServiceName)
+				}
 				return
 			}
 			fmt.Fprintf(a.out, "timesheet v%s is already up to date\n", result.CurrentVersion)
