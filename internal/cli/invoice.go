@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 
 	"github.com/gustmrg/timesheet-cli/internal/api"
 	"github.com/spf13/cobra"
@@ -19,31 +18,11 @@ func (a *app) invoiceCommand() *cobra.Command {
 }
 
 func (a *app) invoiceListCommand() *cobra.Command {
-	var all bool
-	var limit, offset int
-	var search, status string
+	var options invoiceListOptions
 	cmd := &cobra.Command{Use: "list", Short: "List invoices", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
-		if limit <= 0 {
-			return fail("invalid_input", "--limit must be a positive integer", 2, nil)
-		}
-		if offset < 0 {
-			return fail("invalid_input", "--offset cannot be negative", 2, nil)
-		}
-		status = strings.ToLower(strings.TrimSpace(status))
-		if status != "" && status != "pending" && status != "sent" {
-			return fail("invalid_input", "--status must be `pending` or `sent`", 2, nil)
-		}
-		if all {
-			offset = 0
-			limit = allInvoiceRows
-		}
-		client, err := a.client()
+		page, err := a.listInvoices(options)
 		if err != nil {
 			return err
-		}
-		page, apiErr := client.ListInvoices(api.InvoiceQuery{Offset: offset, Limit: limit, Search: search, Status: status})
-		if apiErr != nil {
-			return classifyAPI(apiErr)
 		}
 		return a.success(page, func() {
 			printInvoiceTable(a.out, page.Invoices)
@@ -52,11 +31,11 @@ func (a *app) invoiceListCommand() *cobra.Command {
 			}
 		})
 	}}
-	cmd.Flags().BoolVar(&all, "all", false, "show every matching invoice")
-	cmd.Flags().IntVar(&limit, "limit", 20, "maximum number of invoices")
-	cmd.Flags().IntVar(&offset, "offset", 0, "number of matching invoices to skip")
-	cmd.Flags().StringVar(&search, "search", "", "search invoice records")
-	cmd.Flags().StringVar(&status, "status", "", "filter by status: pending or sent")
+	cmd.Flags().BoolVar(&options.all, "all", false, "show every matching invoice")
+	cmd.Flags().IntVar(&options.limit, "limit", 20, "maximum number of invoices")
+	cmd.Flags().IntVar(&options.offset, "offset", 0, "number of matching invoices to skip")
+	cmd.Flags().StringVar(&options.search, "search", "", "search invoice records")
+	cmd.Flags().StringVar(&options.status, "status", "", "filter by status: pending or sent")
 	return cmd
 }
 
@@ -66,13 +45,9 @@ func (a *app) invoicePreviewCommand() *cobra.Command {
 		if err != nil || processID <= 0 {
 			return fail("invalid_input", fmt.Sprintf("invalid process ID %q", args[0]), 2, err)
 		}
-		client, clientErr := a.client()
-		if clientErr != nil {
-			return clientErr
-		}
-		preview, apiErr := client.InvoicePreview(processID)
-		if apiErr != nil {
-			return classifyAPI(apiErr)
+		preview, err := a.invoicePreview(processID)
+		if err != nil {
+			return err
 		}
 		return a.success(preview, func() {
 			fmt.Fprintf(a.out, "process %d\n", processID)

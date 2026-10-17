@@ -76,6 +76,9 @@ timesheet add --customer CUSTOMER --project PROJECT --category CATEGORY \
   [--date DATE] --start HH:mm --end HH:mm --desc DESCRIPTION [--not-monetize]
 timesheet update ENTRY_ID [entry flags] [--monetize | --not-monetize]
 timesheet delete ENTRY_ID [--yes]
+timesheet mcp [--http ADDRESS] [--token-file PATH]
+timesheet mcp install [--http ADDRESS] [--token-file PATH]
+timesheet mcp uninstall
 timesheet upgrade
 timesheet version
 ```
@@ -114,6 +117,64 @@ Failures print an envelope on stderr and exit nonzero:
 
 Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`, `credential_store_error`, `not_found`, `ambiguous_value`, `network_error`, `invalid_server_response`, `operation_failed`, `upgrade_failed`, and `internal_error`.
 
+## MCP server
+
+`timesheet mcp` serves the CLI's operations to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io). The agent gets tools; the session and saved credentials stay with the CLI and never reach it.
+
+| Tool | Equivalent command |
+| --- | --- |
+| `list_entries` | `timesheet list` |
+| `get_metadata` | `timesheet meta` |
+| `get_entry` | `timesheet show` |
+| `get_entry_status` | `timesheet status` |
+| `list_invoices` | `timesheet invoice list` |
+| `preview_invoice` | `timesheet invoice preview` |
+| `create_entry` | `timesheet add` |
+| `update_entry` | `timesheet update` |
+| `delete_entry` | `timesheet delete --yes` |
+
+Read tools are annotated read-only and the write tools destructive, so clients that ask before each call can allow reads and keep asking for writes. Results use the same envelope as `--json`. `upgrade`, `login`, and `logout` are not exposed. Log in once with `timesheet login --save-credentials` (add `--credential-store file` on a headless machine) so the server can renew its session.
+
+Without flags the server speaks MCP over stdin and stdout, for clients that launch it as a local process:
+
+```json
+{ "mcpServers": { "timesheet": { "command": "timesheet", "args": ["mcp"] } } }
+```
+
+With `--http` it serves Streamable HTTP at `/mcp`:
+
+```sh
+timesheet mcp --http 127.0.0.1:8765
+```
+
+Every HTTP request must send `Authorization: Bearer <token>`. The token is read from `TIMESHEET_MCP_TOKEN`, or from `~/.timesheet-cli/mcp-token`, which is created with a random token (mode `0600`) on first start; `--token-file` names another file, which must already exist. Tokens must be at least 32 characters.
+
+### Running it as a service on Linux
+
+To keep the HTTP server running in the background, install it as a systemd user service:
+
+```sh
+timesheet login --save-credentials --credential-store file
+timesheet mcp install                 # listens on 127.0.0.1:8765; --http changes it
+loginctl enable-linger "$USER"        # keep it running while you are logged out
+```
+
+`install` writes `~/.config/systemd/user/timesheet-mcp.service` pointing at the running executable, creates the token file if needed, and enables and starts the service, which then starts again at login and after a crash. Running it again replaces the service and restarts it. `TIMESHEET_BASE_URL`, `TIMESHEET_SESSION`, and `TIMESHEET_CREDENTIALS` are copied into the service when set; the service always reads its token from the file, never from `TIMESHEET_MCP_TOKEN`. The command warns when lingering is off, because systemd then stops the service when your last session ends.
+
+Use the file credential store on a server: the operating system vault is usually locked or absent while you are logged out, so the service could not renew its session. After `timesheet upgrade`, run `systemctl --user restart timesheet-mcp` to load the new version. Inspect the service with `systemctl --user status timesheet-mcp` and `journalctl --user -u timesheet-mcp`, and remove it with `timesheet mcp uninstall`, which keeps the token file, session, and credentials.
+
+The service is Linux only. On macOS or Windows, run `timesheet mcp --http ADDRESS` under launchd, Task Scheduler, or another service manager.
+
+### Connecting over HTTPS
+
+Clients that require HTTPS, such as remote MCP servers in Wisp Bot, can reach it through a TLS reverse proxy. On a machine in a Tailscale tailnet:
+
+```sh
+tailscale serve --bg --https=8443 http://127.0.0.1:8765
+```
+
+Then add `https://<machine>.<tailnet>.ts.net:8443/mcp` as a remote MCP server with header authentication: header `Authorization`, value `Bearer <token>`.
+
 ## Configuration
 
 | Variable | Purpose | Default |
@@ -123,6 +184,7 @@ Stable error codes are `usage`, `invalid_input`, `auth_required`, `login_failed`
 | `TIMESHEET_SESSION` | Session file location | `~/.timesheet-cli/session.json` |
 | `TIMESHEET_CREDENTIALS` | File credential store location | `~/.timesheet-cli/credentials.json` |
 | `TIMESHEET_BASE_URL` | Timesheet server URL | `https://luby-timesheet.azurewebsites.net` |
+| `TIMESHEET_MCP_TOKEN` | Bearer token for `timesheet mcp --http` | `~/.timesheet-cli/mcp-token` |
 
-The session and credentials files contain authentication secrets. Do not print, share, or commit them.
+The session, credentials, and MCP token files contain authentication secrets. Do not print, share, or commit them.
 
