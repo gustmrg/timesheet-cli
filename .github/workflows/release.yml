@@ -1,18 +1,30 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (patch, minor, major, beta, or an exact version such as 1.2.3 or 1.3.0-rc.1). Releases run from main.
+        required: true
+        type: string
+        default: patch
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  # Resolves the version and runs every check plus a full snapshot build of
+  # all platforms. Nothing is tagged until they pass, so a failed run leaves
+  # the repository untouched.
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      previous: ${{ steps.version.outputs.previous }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -21,7 +33,68 @@ jobs:
         with:
           go-version: '1.26.x'
           cache: true
-      - run: go test ./...
+      - id: version
+        name: Resolve release version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="$(git ls-remote --tags origin | scripts/release-version.sh "$REQUESTED_VERSION")"
+          # A prerelease can preview any branch; a release ships what main has.
+          if [[ "$GITHUB_REF" != refs/heads/main && "$VERSION" != *-* ]]; then
+            echo "::error::Only prereleases run from $GITHUB_REF_NAME. Release $VERSION from main."
+            exit 1
+          fi
+          # A release's notes cover everything since the previous release,
+          # prereleases included; a prerelease's start from the tag before it.
+          PREVIOUS=""
+          if [[ "$VERSION" != *-* ]]; then
+            PREVIOUS="$(git ls-remote --tags origin | sed -nE 's#.*refs/tags/(v[0-9]+\.[0-9]+\.[0-9]+)$#\1#p' | sort -V | tail -n 1)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION from $GITHUB_REF_NAME at $GITHUB_SHA, with notes since ${PREVIOUS:-the previous tag}."
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l .)"
+          test -z "$files" || { echo "$files"; exit 1; }
+      - run: go vet ./...
+      - run: go test -race ./...
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: latest
+          args: check
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: latest
+          args: build --snapshot --clean
+
+  # Tags the commit the checks ran on and publishes the release from it.
+  release:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Tag the version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "refs/tags/v$VERSION"
       - uses: sigstore/cosign-installer@v4.1.0
       - uses: goreleaser/goreleaser-action@v7
         with:
@@ -30,6 +103,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_PREVIOUS_TAG: ${{ needs.prepare.outputs.previous }}
       - name: Attest release artifacts
         # GitHub does not support artifact attestations for private user repositories.
         if: github.event.repository.private == false
