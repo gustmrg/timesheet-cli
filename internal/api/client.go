@@ -17,9 +17,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gustmrg/timesheet-cli/internal/webparse"
 )
+
+// requestTimeout bounds each request so a stalled server cannot hold the
+// long-running MCP server's tool calls indefinitely.
+const requestTimeout = 60 * time.Second
 
 type Kind string
 
@@ -152,7 +157,7 @@ func New(config Config) (*Client, error) {
 		renewSession:     config.RenewSession,
 		persistedCookies: make(map[string]string),
 	}
-	client.http = &http.Client{Jar: jar}
+	client.http = &http.Client{Jar: jar, Timeout: requestTimeout}
 	if err := client.loadSession(); err != nil {
 		return nil, err
 	}

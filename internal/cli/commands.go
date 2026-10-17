@@ -191,26 +191,14 @@ func (a *app) listCommand() *cobra.Command {
 	var all bool
 	var limit int
 	cmd := &cobra.Command{Use: "list", Short: "List timesheet entries", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
-		if limit <= 0 {
-			return fail("invalid_input", "--limit must be a positive integer", 2, nil)
-		}
-		client, err := a.client()
+		list, err := a.listEntries(limit, all)
 		if err != nil {
 			return err
 		}
-		entries, apiErr := client.ListEntries()
-		if apiErr != nil {
-			return classifyAPI(apiErr)
-		}
-		total := len(entries)
-		if !all && len(entries) > limit {
-			entries = entries[:limit]
-		}
-		data := map[string]any{"entries": entries, "returned": len(entries), "total": total}
-		return a.success(data, func() {
-			printEntryTable(a.out, entries)
-			if len(entries) < total {
-				fmt.Fprintf(a.out, "… %d more (use --all)\n", total-len(entries))
+		return a.success(list, func() {
+			printEntryTable(a.out, list.Entries)
+			if list.Returned < list.Total {
+				fmt.Fprintf(a.out, "… %d more (use --all)\n", list.Total-list.Returned)
 			}
 		})
 	}}
@@ -221,13 +209,9 @@ func (a *app) listCommand() *cobra.Command {
 
 func (a *app) metaCommand() *cobra.Command {
 	return &cobra.Command{Use: "meta", Short: "List customers, projects, and categories", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
-		client, err := a.client()
+		customers, err := a.metadata()
 		if err != nil {
 			return err
-		}
-		customers, apiErr := loadMeta(client)
-		if apiErr != nil {
-			return classifyAPI(apiErr)
 		}
 		return a.success(map[string]any{"customers": customers}, func() { printMeta(a.out, customers) })
 	}}
@@ -239,36 +223,13 @@ func (a *app) statusCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		client, clientErr := a.client()
-		if clientErr != nil {
-			return clientErr
+		status, entry, err := a.entryStatus(id)
+		if err != nil {
+			return err
 		}
-		entries, apiErr := client.ListEntries()
-		if apiErr != nil {
-			return classifyAPI(apiErr)
-		}
-		var entry *webparse.Entry
-		for index := range entries {
-			if entries[index].ID == id {
-				entry = &entries[index]
-				break
-			}
-		}
-		if entry == nil {
-			return fail("not_found", fmt.Sprintf("entry %d not found", id), 5, nil)
-		}
-		if entry.EvaluateID == nil {
-			return fail("not_found", fmt.Sprintf("entry %d has no evaluation", id), 5, nil)
-		}
-		evaluation, apiErr := client.Evaluate(id, *entry.EvaluateID)
-		if apiErr != nil {
-			return classifyAPI(apiErr)
-		}
-		state := evaluationState(evaluation)
-		data := map[string]any{"entryId": id, "state": state, "manager": evaluation.ManagerName, "created": evaluation.Created}
-		return a.success(data, func() {
+		return a.success(status, func() {
 			fmt.Fprintf(a.out, "entry %d (%s %s–%s, %s)\n", id, entry.Date, entry.Start, entry.End, entry.Project)
-			fmt.Fprintf(a.out, "status:  %s\nmanager: %s\ncreated: %s\n", state, pointerText(evaluation.ManagerName), pointerText(evaluation.Created))
+			fmt.Fprintf(a.out, "status:  %s\nmanager: %s\ncreated: %s\n", status.State, pointerText(status.Manager), pointerText(status.Created))
 		})
 	}}
 }
@@ -279,44 +240,14 @@ func (a *app) showCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		client, clientErr := a.client()
-		if clientErr != nil {
-			return clientErr
+		details, err := a.entryDetails(id)
+		if err != nil {
+			return err
 		}
-		entries, apiErr := client.ListEntries()
-		if apiErr != nil {
-			return classifyAPI(apiErr)
-		}
-		var entry *webparse.Entry
-		for index := range entries {
-			if entries[index].ID == id {
-				entry = &entries[index]
-				break
-			}
-		}
-		if entry == nil {
-			return fail("not_found", fmt.Sprintf("entry %d not found", id), 5, nil)
-		}
-		if entry.EvaluateID == nil {
-			return fail("not_found", fmt.Sprintf("entry %d has no evaluation", id), 5, nil)
-		}
-		evaluation, apiErr := client.Evaluate(id, *entry.EvaluateID)
-		if apiErr != nil {
-			return classifyAPI(apiErr)
-		}
-		description := evaluation.Description
-		if text, textErr := webparse.FragmentText(description); textErr == nil {
-			description = text
-		}
-		data := map[string]any{
-			"entryId": id, "date": entry.Date, "start": entry.Start, "end": entry.End, "total": entry.Total,
-			"customer": entry.Customer, "project": entry.Project, "category": entry.Category,
-			"status": entry.Status, "description": description,
-		}
-		return a.success(data, func() {
-			fmt.Fprintf(a.out, "entry %d (%s %s–%s, %s)\n", id, entry.Date, entry.Start, entry.End, entry.Project)
-			fmt.Fprintf(a.out, "customer: %s\ncategory: %s\ntotal:    %s\nstatus:   %s\n", entry.Customer, entry.Category, entry.Total, entry.Status)
-			fmt.Fprintf(a.out, "description:\n%s\n", description)
+		return a.success(details, func() {
+			fmt.Fprintf(a.out, "entry %d (%s %s–%s, %s)\n", id, details.Date, details.Start, details.End, details.Project)
+			fmt.Fprintf(a.out, "customer: %s\ncategory: %s\ntotal:    %s\nstatus:   %s\n", details.Customer, details.Category, details.Total, details.Status)
+			fmt.Fprintf(a.out, "description:\n%s\n", details.Description)
 		})
 	}}
 }
@@ -324,27 +255,13 @@ func (a *app) showCommand() *cobra.Command {
 func (a *app) addCommand() *cobra.Command {
 	var flags entryFlags
 	cmd := &cobra.Command{Use: "add", Short: "Create a timesheet entry", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
-		if flags.monetize {
-			return fail("invalid_input", "--monetize is only meaningful when updating an entry", 2, nil)
-		}
-		if err := validateEntrySyntax(flags, true); err != nil {
-			return err
-		}
-		client, err := a.client()
+		result, err := a.createEntry(flags)
 		if err != nil {
 			return err
 		}
-		entry, normalized, resolveErr := resolveEntry(client, flags, nil)
-		if resolveErr != nil {
-			return resolveErr
-		}
-		created, apiErr := client.Create(entry)
-		if apiErr != nil {
-			return a.classifyMutationError(client, apiErr)
-		}
-		normalized.ID = created.ID
-		return a.success(map[string]any{"action": "created", "entry": normalized}, func() {
-			fmt.Fprintf(a.out, "created entry %d (%s %s–%s, %s)\n", created.ID, entry.Date, entry.Start, entry.End, entry.Project.Name)
+		return a.success(result, func() {
+			entry := result.Entry
+			fmt.Fprintf(a.out, "created entry %d (%s %s–%s, %s)\n", entry.ID, entry.Date, entry.Start, entry.End, entry.Project.Name)
 		})
 	}}
 	bindEntryFlags(cmd, &flags)
@@ -354,9 +271,6 @@ func (a *app) addCommand() *cobra.Command {
 func (a *app) updateCommand() *cobra.Command {
 	var flags entryFlags
 	cmd := &cobra.Command{Use: "update <entry-id>", Short: "Update a timesheet entry", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if flags.monetize && flags.notMonetize {
-			return fail("invalid_input", "--monetize and --not-monetize are mutually exclusive", 2, nil)
-		}
 		if cmd.Flags().Changed("desc") && flags.description == "" {
 			return fail("invalid_input", "--desc cannot be empty", 2, nil)
 		}
@@ -364,36 +278,12 @@ func (a *app) updateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if err := validateEntrySyntax(flags, false); err != nil {
+		result, err := a.updateEntry(id, flags)
+		if err != nil {
 			return err
 		}
-		client, clientErr := a.client()
-		if clientErr != nil {
-			return clientErr
-		}
-		current, apiErr := client.Worksheet(id)
-		if apiErr != nil {
-			return classifyAPI(apiErr)
-		}
-		if current.ID == 0 {
-			return fail("not_found", fmt.Sprintf("entry %d not found", id), 5, nil)
-		}
-		base := &entryBase{customer: api.Ref{ID: current.IDCustomer}, project: api.Ref{ID: current.IDProject}, category: api.Ref{ID: current.IDCategory}, date: current.InformedDate, start: current.StartTime, end: current.EndTime, description: current.Description, descriptionHTML: !cmd.Flags().Changed("desc"), notMonetize: current.NotMonetize}
-		if cmd.Flags().Changed("not-monetize") {
-			base.notMonetize = true
-		}
-		if cmd.Flags().Changed("monetize") {
-			base.notMonetize = false
-		}
-		entry, normalized, resolveErr := resolveEntry(client, flags, base)
-		if resolveErr != nil {
-			return resolveErr
-		}
-		if apiErr := client.Update(id, entry); apiErr != nil {
-			return a.classifyMutationError(client, apiErr)
-		}
-		normalized.ID = id
-		return a.success(map[string]any{"action": "updated", "entry": normalized}, func() {
+		return a.success(result, func() {
+			entry := result.Entry
 			fmt.Fprintf(a.out, "updated entry %d (%s %s–%s, %s)\n", id, entry.Date, entry.Start, entry.End, entry.Project.Name)
 		})
 	}}
@@ -409,38 +299,47 @@ func (a *app) deleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		client, clientErr := a.client()
-		if clientErr != nil {
-			return clientErr
-		}
 		if !yes {
-			entries, apiErr := client.ListEntries()
-			if apiErr != nil {
-				return classifyAPI(apiErr)
+			confirmed, err := a.confirmDelete(id)
+			if err != nil {
+				return err
 			}
-			what := fmt.Sprintf("id %d", id)
-			for _, entry := range entries {
-				if entry.ID == id {
-					what = fmt.Sprintf("%s %s–%s %s (%s)", entry.Date, entry.Start, entry.End, entry.Project, entry.Category)
-					break
-				}
-			}
-			fmt.Fprintf(a.promptWriter(), "Delete entry %s? [y/N] ", what)
-			answer, readErr := bufio.NewReader(a.in).ReadString('\n')
-			if readErr != nil && readErr != io.EOF {
-				return fail("internal_error", "read confirmation", 1, readErr)
-			}
-			if !yesAnswer(answer) {
-				return a.success(map[string]any{"id": id, "deleted": false}, func() { fmt.Fprintln(a.out, "aborted") })
+			if !confirmed {
+				return a.success(entryDeletion{ID: id, Deleted: false}, func() { fmt.Fprintln(a.out, "aborted") })
 			}
 		}
-		if apiErr := client.Delete(id); apiErr != nil {
-			return a.classifyMutationError(client, apiErr)
+		result, err := a.deleteEntry(id)
+		if err != nil {
+			return err
 		}
-		return a.success(map[string]any{"id": id, "deleted": true}, func() { fmt.Fprintf(a.out, "deleted entry %d\n", id) })
+		return a.success(result, func() { fmt.Fprintf(a.out, "deleted entry %d\n", id) })
 	}}
 	cmd.Flags().BoolVar(&yes, "yes", false, "delete without prompting")
 	return cmd
+}
+
+func (a *app) confirmDelete(id int64) (bool, error) {
+	client, err := a.client()
+	if err != nil {
+		return false, err
+	}
+	entries, apiErr := client.ListEntries()
+	if apiErr != nil {
+		return false, classifyAPI(apiErr)
+	}
+	what := fmt.Sprintf("id %d", id)
+	for _, entry := range entries {
+		if entry.ID == id {
+			what = fmt.Sprintf("%s %s–%s %s (%s)", entry.Date, entry.Start, entry.End, entry.Project, entry.Category)
+			break
+		}
+	}
+	fmt.Fprintf(a.promptWriter(), "Delete entry %s? [y/N] ", what)
+	answer, readErr := bufio.NewReader(a.in).ReadString('\n')
+	if readErr != nil && readErr != io.EOF {
+		return false, fail("internal_error", "read confirmation", 1, readErr)
+	}
+	return yesAnswer(answer), nil
 }
 
 func (a *app) classifyMutationError(client *api.Client, err error) error {

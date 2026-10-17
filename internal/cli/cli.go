@@ -25,6 +25,8 @@ type app struct {
 	credentialStore credentials.Store
 	clients         []*api.Client
 	warnings        []api.Warning
+	// runCommand replaces os/exec for system commands such as systemctl in tests.
+	runCommand func(name string, args ...string) (string, error)
 }
 
 type commandError struct {
@@ -79,7 +81,7 @@ func (a *app) rootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&a.json, "json", false, "emit machine-readable JSON")
 	root.AddCommand(
 		a.loginCommand(), a.logoutCommand(), a.listCommand(), a.metaCommand(), a.statusCommand(), a.showCommand(),
-		a.addCommand(), a.updateCommand(), a.deleteCommand(), a.invoiceCommand(), a.upgradeCommand(), a.versionCommand(),
+		a.addCommand(), a.updateCommand(), a.deleteCommand(), a.invoiceCommand(), a.mcpCommand(), a.upgradeCommand(), a.versionCommand(),
 	)
 	return root
 }
@@ -105,12 +107,7 @@ func (a *app) client() (*api.Client, error) {
 }
 
 func (a *app) success(data any, human func()) error {
-	warnings := append([]api.Warning(nil), a.warnings...)
-	for _, client := range a.clients {
-		for _, warning := range client.Warnings() {
-			warnings = appendWarning(warnings, warning)
-		}
-	}
+	warnings := a.collectWarnings()
 	if a.json {
 		envelope := map[string]any{"ok": true, "data": data}
 		if len(warnings) != 0 {
@@ -123,6 +120,16 @@ func (a *app) success(data any, human func()) error {
 		fmt.Fprintf(a.errOut, "warning: %s\n", warning.Message)
 	}
 	return nil
+}
+
+func (a *app) collectWarnings() []api.Warning {
+	warnings := append([]api.Warning(nil), a.warnings...)
+	for _, client := range a.clients {
+		for _, warning := range client.Warnings() {
+			warnings = appendWarning(warnings, warning)
+		}
+	}
+	return warnings
 }
 
 func (a *app) addWarning(code, message string) {
