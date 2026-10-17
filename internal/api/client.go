@@ -401,11 +401,11 @@ func (c *Client) loadSession() error {
 		return nil
 	}
 	if err != nil {
-		return &Error{Kind: KindInvalidResponse, Message: "read session file", Cause: err}
+		return &Error{Kind: KindInvalidResponse, Message: fmt.Sprintf("read session file: %v", err), Cause: err}
 	}
 	var stored map[string]string
 	if err := json.Unmarshal(body, &stored); err != nil {
-		return &Error{Kind: KindInvalidResponse, Message: "session file contains invalid JSON", Cause: err}
+		return &Error{Kind: KindInvalidResponse, Message: fmt.Sprintf("session file %s contains invalid JSON", c.sessionFile), Cause: err}
 	}
 	cookies := make([]*http.Cookie, 0, len(stored))
 	for name, value := range stored {
@@ -428,12 +428,12 @@ func (c *Client) saveSession() error {
 func (c *Client) writeSession(stored map[string]string) error {
 	directory := filepath.Dir(c.sessionFile)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return &Error{Kind: KindInvalidResponse, Message: "create session directory", Cause: err}
+		return &Error{Kind: KindInvalidResponse, Message: fmt.Sprintf("create session directory: %v", err), Cause: err}
 	}
 	_ = os.Chmod(directory, 0o700)
 	temporary, err := os.CreateTemp(directory, ".session-*.tmp")
 	if err != nil {
-		return &Error{Kind: KindInvalidResponse, Message: "create temporary session file", Cause: err}
+		return &Error{Kind: KindInvalidResponse, Message: fmt.Sprintf("create temporary session file: %v", err), Cause: err}
 	}
 	name := temporary.Name()
 	defer os.Remove(name)
@@ -455,7 +455,7 @@ func (c *Client) writeSession(stored map[string]string) error {
 		err = os.Rename(name, c.sessionFile)
 	}
 	if err != nil {
-		return &Error{Kind: KindInvalidResponse, Message: "save session file", Cause: err}
+		return &Error{Kind: KindInvalidResponse, Message: fmt.Sprintf("save session file: %v", err), Cause: err}
 	}
 	return nil
 }

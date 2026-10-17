@@ -454,3 +454,17 @@ func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(value)
 }
+
+func TestUnreadableSessionErrorNamesTheFileAndCause(t *testing.T) {
+	session := filepath.Join(t.TempDir(), "session.json")
+	if err := os.Mkdir(session, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := api.New(api.Config{BaseURL: "https://example.test", SessionFile: session})
+	if !api.IsKind(err, api.KindInvalidResponse) {
+		t.Fatalf("New() error = %v; want an invalid response error", err)
+	}
+	if !strings.Contains(err.Error(), session) {
+		t.Fatalf("error %q does not name the session file %s", err, session)
+	}
+}
